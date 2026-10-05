@@ -114,7 +114,7 @@ export function Dashboard({
 
       {reviewCount > 0 && (
         <Link
-          href="/transactions?review=1"
+          href="/review"
           className="mt-4 flex animate-rise items-center gap-3 rounded-2xl bg-[color-mix(in_srgb,var(--warning)_9%,var(--surface))] px-5 py-3.5 text-[14px] transition hover:brightness-[0.98]"
         >
           <CircleAlert className="size-4 text-warning" />
@@ -122,7 +122,7 @@ export function Dashboard({
             <span className="font-medium">
               {reviewCount} transaction{reviewCount > 1 ? "s" : ""} to review.
             </span>{" "}
-            <span className="text-muted">One click each. Your answers become rules, so future imports get them right.</span>
+            <span className="text-muted">One tap per merchant. FinanceVault remembers your answer for every future statement.</span>
           </span>
           <ChevronRight className="size-4 text-subtle" />
         </Link>

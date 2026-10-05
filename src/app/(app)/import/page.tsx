@@ -31,11 +31,11 @@ export default async function ImportPage() {
                 <span className="font-medium text-fg">2 · AI.</span>{" "}
                 {ai
                   ? "Unknown merchants are sent to Gemini, one request per batch of merchants. Confident answers are saved as rules."
-                  : "Not configured. Set GEMINI_API_KEY to enable AI inference for unknown merchants."}
+                  : "Off (optional). Unknown merchants simply wait in Review."}
               </li>
               <li>
-                <span className="font-medium text-fg">3 · You.</span> Anything uncertain gets a sensible default and is flagged. Fix it in one click and
-                FinanceVault remembers.
+                <span className="font-medium text-fg">3 · You.</span> New merchants wait in Review with suggestions from your own history. Sort each one once
+                and FinanceVault remembers it.
               </li>
             </ol>
           </Card>

@@ -53,12 +53,14 @@ export function CategoriesView({ categories, aiEnabled, reviewCount }: { categor
     <>
       <PageHeader
         title="Categories"
-        subtitle="Make them fit your life. Descriptions help the AI file things where you would."
+        subtitle="Make them fit your life. Everything you sort is remembered for future statements."
         actions={
           <>
-            <Button size="sm" onClick={() => setAiOpen(true)}>
-              <Sparkles className="text-accent" /> Re-categorize with AI
-            </Button>
+            {aiEnabled && (
+              <Button size="sm" onClick={() => setAiOpen(true)}>
+                <Sparkles className="text-accent" /> Re-categorize with AI
+              </Button>
+            )}
             <Button size="sm" variant="primary" onClick={() => open(null)}>
               <Plus /> New category
             </Button>

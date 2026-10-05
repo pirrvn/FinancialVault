@@ -22,6 +22,7 @@ import {
   CircleAlert,
   LogOut,
   Shapes,
+  Inbox,
 } from "lucide-react";
 import { CopilotProvider, useCopilot } from "./copilot/copilot-provider";
 import { logoutAction } from "@/lib/auth-actions";
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutGrid, key: "o" },
   { href: "/transactions", label: "Transactions", icon: ListOrdered, key: "t" },
+  { href: "/review", label: "Review", icon: Inbox, key: "v" },
   { href: "/insights", label: "Insights", icon: Lightbulb, key: "i" },
   { href: "/forecast", label: "Forecast", icon: LineChart, key: "f" },
   { href: "/categories", label: "Categories", icon: Shapes, key: "c" },
@@ -115,7 +117,7 @@ function Shell({ children, reviewCount, canSignOut }: { children: React.ReactNod
               >
                 <n.icon className="size-[17px]" strokeWidth={active ? 2.2 : 1.8} />
                 <span className="flex-1">{n.label}</span>
-                {n.href === "/transactions" && reviewCount > 0 && (
+                {n.href === "/review" && reviewCount > 0 && (
                   <span className="rounded-full bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 tabular text-[11px] font-semibold text-warning">
                     {reviewCount}
                   </span>
@@ -125,19 +127,34 @@ function Shell({ children, reviewCount, canSignOut }: { children: React.ReactNod
           })}
         </nav>
         <div className="mt-auto space-y-3">
-          <button
-            onClick={() => copilot.setOpen(true)}
-            className="group relative flex w-full items-center gap-3 overflow-hidden rounded-2xl bg-gradient-to-br from-[#7A86C2]/15 to-[#4E9E9C]/15 px-3 py-3 text-left transition-all hover:from-[#7A86C2]/25 hover:to-[#4E9E9C]/25"
-          >
-            <span className="flex size-8 items-center justify-center rounded-[10px] bg-gradient-to-br from-[#7A86C2] to-[#4E9E9C] text-white">
-              <Sparkles className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold">Ask Copilot</span>
-              <span className="block text-[11.5px] text-muted">Chat with your money</span>
-            </span>
-            <Kbd>⌘J</Kbd>
-          </button>
+          {copilot.enabled ? (
+            <button
+              onClick={() => copilot.setOpen(true)}
+              className="group relative flex w-full items-center gap-3 overflow-hidden rounded-2xl bg-gradient-to-br from-[#7A86C2]/15 to-[#4E9E9C]/15 px-3 py-3 text-left transition-all hover:from-[#7A86C2]/25 hover:to-[#4E9E9C]/25"
+            >
+              <span className="flex size-8 items-center justify-center rounded-[10px] bg-gradient-to-br from-[#7A86C2] to-[#4E9E9C] text-white">
+                <Sparkles className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold">Ask Copilot</span>
+                <span className="block text-[11.5px] text-muted">Chat with your money</span>
+              </span>
+              <Kbd>⌘J</Kbd>
+            </button>
+          ) : reviewCount > 0 ? (
+            <Link
+              href="/review"
+              className="flex w-full items-center gap-3 rounded-2xl bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] px-3 py-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--warning)_16%,transparent)]"
+            >
+              <span className="flex size-8 items-center justify-center rounded-[10px] bg-warning text-white">
+                <Inbox className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold">{reviewCount} to sort</span>
+                <span className="block text-[11.5px] text-muted">One tap per merchant</span>
+              </span>
+            </Link>
+          ) : null}
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <ThemeSwitch />
@@ -165,17 +182,28 @@ function Shell({ children, reviewCount, canSignOut }: { children: React.ReactNod
         <button onClick={() => setPaletteOpen(true)} className="rounded-full p-2 hover:bg-fill" aria-label="Search">
           <Search className="size-4" />
         </button>
-        <button onClick={() => copilot.setOpen(true)} className="rounded-full p-2 hover:bg-fill" aria-label="Copilot">
-          <Sparkles className="size-4" />
-        </button>
+        {copilot.enabled && (
+          <button onClick={() => copilot.setOpen(true)} className="rounded-full p-2 hover:bg-fill" aria-label="Copilot">
+            <Sparkles className="size-4" />
+          </button>
+        )}
       </header>
       <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-line pt-1.5 pb-[max(env(safe-area-inset-bottom),6px)] glass md:hidden">
-        {NAV.filter((n) => n.href !== "/rules" && n.href !== "/categories").map((n) => {
+        {NAV.filter((n) => !["/rules", "/categories", "/forecast"].includes(n.href)).map((n) => {
           const active = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
           return (
-            <Link key={n.href} href={n.href} className={cn("flex flex-col items-center gap-0.5 px-2 text-[10px]", active ? "text-accent" : "text-subtle")}>
+            <Link
+              key={n.href}
+              href={n.href}
+              className={cn("relative flex flex-col items-center gap-0.5 px-2 text-[10px]", active ? "text-accent" : "text-subtle")}
+            >
               <n.icon className="size-5" />
               {n.label}
+              {n.href === "/review" && reviewCount > 0 && (
+                <span className="absolute -top-1 left-1/2 ml-1.5 min-w-4 rounded-full bg-warning px-1 text-center tabular text-[9.5px] leading-4 font-semibold text-white">
+                  {reviewCount > 99 ? "99+" : reviewCount}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -184,7 +212,7 @@ function Shell({ children, reviewCount, canSignOut }: { children: React.ReactNod
       <main className="mx-auto w-full max-w-[1280px] px-4 pt-6 pb-24 sm:px-8 md:pt-10 md:pb-16">{children}</main>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} reviewCount={reviewCount} />
-      <CopilotDrawer />
+      {copilot.enabled && <CopilotDrawer />}
     </div>
   );
 }
@@ -244,13 +272,14 @@ function CommandPalette({ open, onOpenChange, reviewCount }: { open: boolean; on
                 value={query}
                 onValueChange={setQuery}
                 autoFocus
-                placeholder="Search pages and actions, or ask a question…"
+                placeholder={copilot.enabled ? "Search pages and actions, or ask a question…" : "Search pages and actions…"}
                 className="h-14 flex-1 bg-transparent text-[16px] outline-none placeholder:text-subtle sm:text-[15px]"
               />
             </div>
             <Command.List className="max-h-[50vh] scrollbar-thin overflow-y-auto p-2">
               <Command.Empty className="p-0">
-                {query && (
+                {query && !copilot.enabled && <p className="px-3 py-6 text-center text-sm text-muted">No results.</p>}
+                {query && copilot.enabled && (
                   <button
                     onClick={() => run(() => copilot.ask(query))}
                     className="flex w-full items-center gap-3 rounded-xl bg-fill-strong px-3 py-2.5 text-left text-[14px]"
@@ -259,7 +288,7 @@ function CommandPalette({ open, onOpenChange, reviewCount }: { open: boolean; on
                   </button>
                 )}
               </Command.Empty>
-              {query.length > 3 && (
+              {copilot.enabled && query.length > 3 && (
                 <Command.Group heading="Copilot" className={headCls}>
                   <Command.Item value={`ask ${query}`} onSelect={() => run(() => copilot.ask(query))} className={itemCls}>
                     <Sparkles className="size-4 text-accent" /> Ask Copilot: <span className="truncate font-medium">{query}</span>
@@ -279,7 +308,7 @@ function CommandPalette({ open, onOpenChange, reviewCount }: { open: boolean; on
                 ))}
               </Command.Group>
               <Command.Group heading="Actions" className={headCls}>
-                <Command.Item value="review needs review uncategorized" onSelect={() => run(() => router.push("/transactions?review=1"))} className={itemCls}>
+                <Command.Item value="review needs review uncategorized" onSelect={() => run(() => router.push("/review"))} className={itemCls}>
                   <CircleAlert className="size-4 text-warning" />
                   <span className="flex-1">Review flagged transactions</span>
                   {reviewCount > 0 && <span className="tabular text-xs text-muted">{reviewCount}</span>}
@@ -287,11 +316,13 @@ function CommandPalette({ open, onOpenChange, reviewCount }: { open: boolean; on
                 <Command.Item value="import upload statement" onSelect={() => run(() => router.push("/import"))} className={itemCls}>
                   <UploadCloud className="size-4 text-muted" /> Import statements
                 </Command.Item>
-                <Command.Item value="open copilot chat" onSelect={() => run(() => copilot.setOpen(true))} className={itemCls}>
-                  <Sparkles className="size-4 text-muted" />
-                  <span className="flex-1">Open Copilot</span>
-                  <Kbd>⌘J</Kbd>
-                </Command.Item>
+                {copilot.enabled && (
+                  <Command.Item value="open copilot chat" onSelect={() => run(() => copilot.setOpen(true))} className={itemCls}>
+                    <Sparkles className="size-4 text-muted" />
+                    <span className="flex-1">Open Copilot</span>
+                    <Kbd>⌘J</Kbd>
+                  </Command.Item>
+                )}
                 <Command.Item
                   value="toggle theme dark light mode"
                   onSelect={() => run(() => setTheme(resolvedTheme === "dark" ? "light" : "dark"))}
@@ -308,9 +339,19 @@ function CommandPalette({ open, onOpenChange, reviewCount }: { open: boolean; on
   );
 }
 
-export function AppShell({ children, reviewCount, canSignOut }: { children: React.ReactNode; reviewCount: number; canSignOut: boolean }) {
+export function AppShell({
+  children,
+  reviewCount,
+  canSignOut,
+  aiEnabled,
+}: {
+  children: React.ReactNode;
+  reviewCount: number;
+  canSignOut: boolean;
+  aiEnabled: boolean;
+}) {
   return (
-    <CopilotProvider>
+    <CopilotProvider enabled={aiEnabled}>
       <Shell reviewCount={reviewCount} canSignOut={canSignOut}>
         {children}
       </Shell>

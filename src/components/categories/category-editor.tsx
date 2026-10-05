@@ -153,7 +153,10 @@ export function CategoryEditor({
             </div>
           </Field>
 
-          <Field label="What goes here?" hint="Gemini reads this when it files new merchants, so be specific: places, brands, habits.">
+          <Field
+            label="What goes here?"
+            hint="Optional. If you turn on AI one day, Gemini reads this to file new merchants, so be specific: places, brands, habits."
+          >
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}

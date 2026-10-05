@@ -126,14 +126,16 @@ export function InsightsView({ txs, categories, currency }: { txs: AnalyticsTx[]
               })}
             </ul>
             <div className="px-4 pb-4">
-              <button
-                onClick={() =>
-                  copilot.ask("Look at my subscriptions and savings opportunities. What are the three changes that would save me the most per year, and how?")
-                }
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-fill py-2.5 text-[13px] font-medium transition-colors hover:bg-fill-strong"
-              >
-                <Sparkles className="size-3.5 text-accent" /> Build a savings plan with Copilot
-              </button>
+              {copilot.enabled && (
+                <button
+                  onClick={() =>
+                    copilot.ask("Look at my subscriptions and savings opportunities. What are the three changes that would save me the most per year, and how?")
+                  }
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-fill py-2.5 text-[13px] font-medium transition-colors hover:bg-fill-strong"
+                >
+                  <Sparkles className="size-3.5 text-accent" /> Build a savings plan with Copilot
+                </button>
+              )}
             </div>
           </Card>
           {income.length > 0 && (

@@ -376,16 +376,18 @@ export function ForecastView({
               <p className="mt-1.5 text-[11.5px] text-subtle">One-offs: negative for a purchase, positive for a windfall.</p>
             </div>
 
-            <button
-              onClick={() =>
-                copilot.ask(
-                  `Using my forecast over ${horizon} months, what's the most realistic way to end that period with a higher balance? Quantify the options.`,
-                )
-              }
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-fill py-2.5 text-[13px] font-medium transition-colors hover:bg-fill-strong"
-            >
-              <Sparkles className="size-3.5 text-accent" /> Ask Copilot for a plan
-            </button>
+            {copilot.enabled && (
+              <button
+                onClick={() =>
+                  copilot.ask(
+                    `Using my forecast over ${horizon} months, what's the most realistic way to end that period with a higher balance? Quantify the options.`,
+                  )
+                }
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-fill py-2.5 text-[13px] font-medium transition-colors hover:bg-fill-strong"
+              >
+                <Sparkles className="size-3.5 text-accent" /> Ask Copilot for a plan
+              </button>
+            )}
           </div>
         </Card>
       </div>

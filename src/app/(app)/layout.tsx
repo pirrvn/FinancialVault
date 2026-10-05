@@ -2,6 +2,7 @@ import { AppShell } from "@/components/app-shell";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/services/user";
 import { authConfig } from "@/lib/auth-token";
+import { aiConfigured } from "@/lib/ai/client";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getCurrentUser();
   const reviewCount = await prisma.transaction.count({ where: { userId: user.id, needsReview: true } });
   return (
-    <AppShell reviewCount={reviewCount} canSignOut={authConfig().mode === "password"}>
+    <AppShell reviewCount={reviewCount} canSignOut={authConfig().mode === "password"} aiEnabled={aiConfigured()}>
       {children}
     </AppShell>
   );

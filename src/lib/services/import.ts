@@ -110,7 +110,7 @@ export async function importStatement(userId: string, fileName: string, bytes: U
     const warnings = [...parsed.warnings, ...result.warnings];
     if (!useAi && result.stats.byFallback > 0) {
       warnings.push(
-        `${result.stats.byFallback} transaction(s) matched no rule and AI is not configured (set GEMINI_API_KEY); they were given a default category and flagged for review.`,
+        `${result.stats.byFallback} transaction(s) from merchants FinanceVault doesn't know yet are waiting in Review. Sort each merchant once and it's remembered.`,
       );
     }
 

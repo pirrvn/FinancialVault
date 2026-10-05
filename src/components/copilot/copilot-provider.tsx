@@ -3,6 +3,8 @@
 import * as React from "react";
 
 interface CopilotCtx {
+  /** False when no AI key is configured: every Copilot entry point is hidden. */
+  enabled: boolean;
   open: boolean;
   setOpen: (open: boolean) => void;
   toggle: () => void;
@@ -14,15 +16,17 @@ interface CopilotCtx {
 
 const Ctx = React.createContext<CopilotCtx | null>(null);
 
-export function CopilotProvider({ children }: { children: React.ReactNode }) {
+export function CopilotProvider({ enabled, children }: { enabled: boolean; children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const [pending, setPending] = React.useState<string | null>(null);
   const value = React.useMemo<CopilotCtx>(
     () => ({
-      open,
-      setOpen,
-      toggle: () => setOpen((o) => !o),
+      enabled,
+      open: enabled && open,
+      setOpen: (o: boolean) => enabled && setOpen(o),
+      toggle: () => enabled && setOpen((o) => !o),
       ask: (q) => {
+        if (!enabled) return;
         setPending(q);
         setOpen(true);
       },
@@ -33,7 +37,7 @@ export function CopilotProvider({ children }: { children: React.ReactNode }) {
         return p;
       },
     }),
-    [open, pending],
+    [enabled, open, pending],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

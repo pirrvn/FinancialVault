@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, CircleAlert, CheckCheck, X, Shapes } from "lucide-react";
+import { Search, CircleAlert, CheckCheck, X, Shapes, Inbox } from "lucide-react";
 import type { CategoryDTO, TransactionDTO } from "@/lib/services/queries";
 import { formatMoney } from "@/lib/money";
 import { monthLabel } from "@/lib/dates";
@@ -211,6 +211,14 @@ export function TransactionsView({
         subtitle={`${filtered.length.toLocaleString()} shown · ${formatMoney(totals.inC, "EUR", { decimals: false })} in · ${formatMoney(totals.outC, "EUR", { decimals: false })} out`}
         actions={
           <>
+            {reviewCount > 0 && (
+              <Link
+                href="/review"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-3 text-[13px] font-medium text-warning transition-colors hover:brightness-95"
+              >
+                <Inbox className="size-4" /> Sort {reviewCount}
+              </Link>
+            )}
             <Link
               href="/categories"
               className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-fill px-3 text-[13px] font-medium transition-colors hover:bg-fill-strong"
