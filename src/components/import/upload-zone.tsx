@@ -41,16 +41,23 @@ export function UploadZone() {
     }
     setBusy(accepted.map((f) => f.name));
     setResults([]);
-    const form = new FormData();
-    accepted.forEach((f) => form.append("files", f));
-    if (hint !== "AUTO") form.append("institution", hint);
+    // One request per file: hosts like Vercel cap request bodies at 4.5 MB, and results stream in as each file finishes.
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      const json = await res.json();
-      setResults(json.results ?? [{ ok: false, fileName: "upload", error: json.error ?? "Upload failed" }]);
+      for (const file of accepted) {
+        const form = new FormData();
+        form.append("files", file);
+        if (hint !== "AUTO") form.append("institution", hint);
+        let result: Result;
+        try {
+          const res = await fetch("/api/upload", { method: "POST", body: form });
+          const json = await res.json().catch(() => null);
+          result = json?.results?.[0] ?? { ok: false, fileName: file.name, error: json?.error ?? `Upload failed (${res.status})` };
+        } catch {
+          result = { ok: false, fileName: file.name, error: "Network error. Check your connection and try again." };
+        }
+        setResults((prev) => [...prev, result]);
+      }
       router.refresh();
-    } catch {
-      setResults([{ ok: false, fileName: "upload", error: "Network error. Is the server running?" }]);
     } finally {
       setBusy(null);
     }

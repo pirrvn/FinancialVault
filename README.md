@@ -122,6 +122,19 @@ Apple-inspired: system font stack (SF Pro on Apple devices), `rounded-3xl` cards
 
 ---
 
+## Deploying (Vercel + Neon)
+
+The app is ready for Vercel with a Neon Postgres database:
+
+1. On [vercel.com](https://vercel.com), import this GitHub repository.
+2. Under **Environment Variables**, add `FINANCEVAULT_PASSWORD`, `AUTH_SECRET` (a random string of at least 32 characters) and, optionally, `ANTHROPIC_API_KEY`. Then deploy.
+3. In the project's **Storage** tab, create a **Neon** database and connect it to the project. This sets `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct).
+4. Redeploy. The `vercel-build` script (`scripts/vercel-build.mjs`) applies migrations through the direct connection, then builds. Before a database is connected it skips migrations, so the first deploy still succeeds.
+
+Uploads are sent one file per request, because Vercel caps request bodies at 4.5 MB.
+
+On iPhone, open the site in Safari and use **Share › Add to Home Screen**. It then opens full-screen with its own icon.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -130,6 +143,9 @@ Apple-inspired: system font stack (SF Pro on Apple devices), `rounded-3xl` cards
 | `ANTHROPIC_API_KEY` | — | Enables AI categorization and the Copilot (an `ant auth login` profile also works) |
 | `FINANCEVAULT_AI_MODEL` | `claude-opus-5-5` | Claude model used for both features |
 | `FINANCEVAULT_USER_EMAIL` | `owner@financevault.local` | Identity of the single owner (see below) |
+| `FINANCEVAULT_PASSWORD` | — | Password for the sign-in screen. **Required in production**: without it the app refuses to serve any data. Optional locally (no password, no login screen). |
+| `AUTH_SECRET` | — | Random string (≥ 32 characters) that signs session cookies. Required in production. Changing it, or the password, signs everyone out. |
+| `DATABASE_URL_UNPOOLED` | — | Optional direct connection used for migrations (set automatically by the Vercel/Neon integration). |
 
 ## Privacy
 
@@ -137,7 +153,7 @@ Statement files are parsed on your server and never sent anywhere. With AI enabl
 
 ## Current limitations
 
-- **Single user.** `getCurrentUser()` upserts one owner, but every query is scoped by `userId`. To make it multi-tenant, add an auth provider (Auth.js, Clerk, …) and replace that one function with a session lookup. **Don't expose the app publicly without adding authentication.**
+- **Single user, single password.** A sign-in screen protects every page, API route and server action: `src/proxy.ts` checks the session first, then `getCurrentUser()` checks it again. Sessions are signed, HTTP-only cookies that last 30 days. Every query is already scoped by `userId`, so going multi-tenant means swapping in an auth provider (Auth.js, Clerk, …) inside `getCurrentUser()`. Failed logins are slowed down, but there's no per-IP lockout: use a long password.
 - **CSV only.** Crédit Agricole's PDF, Excel and OFX exports aren't parsed yet. Export as CSV.
 - **One base currency.** Analytics use the base currency (EUR). Accounts in other currencies (e.g. a Revolut USD pocket) are listed with their balance but not converted.
 - The forecast is a statistical projection from your own history, not financial advice.
