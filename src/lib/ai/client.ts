@@ -1,29 +1,33 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { ApiError, GoogleGenAI } from "@google/genai";
 
-export const AI_MODEL = process.env.FINANCEVAULT_AI_MODEL || "claude-opus-5-5";
+/** Gemini Flash: fast and inexpensive; override with FINANCEVAULT_AI_MODEL. */
+export const AI_MODEL = process.env.FINANCEVAULT_AI_MODEL || "gemini-3.8-flash";
 
-/**
- * Refusal fallbacks: if a safety classifier declines a request, the API re-runs it on
- * Anthropic's recommended fallback model server-side instead of returning a refusal.
- */
-export const FALLBACK_BETA = "server-side-fallback-2026-07-01" as const;
+let client: GoogleGenAI | null = null;
 
-let client: Anthropic | null = null;
+function apiKey() {
+  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+}
 
-/** Credentials resolve from ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / an `ant auth login` profile. */
-export function getAnthropic(): Anthropic {
-  client ??= new Anthropic();
+export function getGemini(): GoogleGenAI {
+  client ??= new GoogleGenAI({ apiKey: apiKey() });
   return client;
 }
 
-/** Cheap pre-check so we don't attempt calls that can only fail. */
+/** AI features are optional: without a key FinanceVault runs on rules + review flags. */
 export function aiConfigured(): boolean {
-  return Boolean(
-    process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE || process.env.FINANCEVAULT_AI_ENABLED === "true",
-  );
+  return Boolean(apiKey());
 }
 
-/** Missing credentials fail inside the SDK before any request is sent, as a plain Error. */
-export function isMissingCredentials(err: unknown): boolean {
-  return err instanceof Error && /could not resolve authentication method/i.test(err.message);
+/** Turn SDK/API failures into a short, user-facing reason. */
+export function describeAiFailure(err: unknown): string {
+  if (!aiConfigured()) return "no Gemini API key is configured (set GEMINI_API_KEY)";
+  if (err instanceof ApiError) {
+    if (err.status === 400 && /api key/i.test(err.message)) return "the Gemini API key is invalid";
+    if (err.status === 401 || err.status === 403) return "the Gemini API key was rejected";
+    if (err.status === 429) return "the Gemini quota is exhausted for now (free tier limits); try again later";
+    if (err.status >= 500) return "Gemini is temporarily unavailable";
+    return `Gemini returned an error (${err.status})`;
+  }
+  return "an unexpected error occurred";
 }

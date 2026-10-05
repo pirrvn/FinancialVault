@@ -34,9 +34,11 @@ export function UploadZone() {
   const depth = React.useRef(0);
 
   const upload = async (files: File[]) => {
-    const accepted = files.filter((f) => /\.(csv|txt|tsv)$/i.test(f.name) || f.type.includes("csv") || f.type === "text/plain");
+    const accepted = files.filter(
+      (f) => /\.(csv|txt|tsv|pdf)$/i.test(f.name) || f.type.includes("csv") || f.type === "text/plain" || f.type === "application/pdf",
+    );
     if (!accepted.length) {
-      setResults([{ ok: false, fileName: files[0]?.name ?? "file", error: "Only CSV exports are supported. In your bank app, export the statement as CSV." }]);
+      setResults([{ ok: false, fileName: files[0]?.name ?? "file", error: "Use a Revolut CSV export or a Crédit Agricole PDF/CSV statement." }]);
       return;
     }
     setBusy(accepted.map((f) => f.name));
@@ -93,7 +95,14 @@ export function UploadZone() {
           busy && "pointer-events-none",
         )}
       >
-        <input ref={inputRef} type="file" accept=".csv,.tsv,.txt,text/csv" multiple hidden onChange={(e) => e.target.files && upload([...e.target.files])} />
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,.tsv,.txt,.pdf,text/csv,application/pdf"
+          multiple
+          hidden
+          onChange={(e) => e.target.files && upload([...e.target.files])}
+        />
         <span
           className={cn(
             "mb-5 flex size-16 items-center justify-center rounded-[20px] transition-all duration-300",
@@ -113,7 +122,7 @@ export function UploadZone() {
           <>
             <p className="text-[17px] font-semibold tracking-tight">{dragging ? "Release to import" : "Drop statements here"}</p>
             <p className="mt-1 text-sm text-muted">
-              or <span className="font-medium text-accent">browse</span> · Revolut CSV · Crédit Agricole CSV (DD/MM/YYYY, “;” separated)
+              or <span className="font-medium text-accent">browse</span> · Revolut CSV · Crédit Agricole PDF or CSV
             </p>
           </>
         )}

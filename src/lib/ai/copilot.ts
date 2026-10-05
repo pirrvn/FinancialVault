@@ -1,5 +1,5 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import type { Content, FunctionCall, FunctionDeclaration, Part } from "@google/genai";
 import { z } from "zod";
 import { foldText } from "../text";
 import { formatMoney } from "../money";
@@ -10,7 +10,7 @@ import { findOpportunities } from "../analytics/opportunities";
 import { buildBaseline, EMPTY_SCENARIO, runForecast } from "../analytics/forecast";
 import type { AccountBalance } from "../analytics/types";
 import type { CategoryDTO, TransactionDTO } from "../services/queries";
-import { AI_MODEL, FALLBACK_BETA, getAnthropic, isMissingCredentials } from "./client";
+import { AI_MODEL, describeAiFailure, getGemini } from "./client";
 
 export interface CopilotData {
   transactions: TransactionDTO[];
@@ -50,12 +50,12 @@ const ForecastInput = z.object({
   one_off_month: z.number().int().optional(),
 });
 
-const TOOLS: Anthropic.Beta.BetaTool[] = [
+const TOOLS: FunctionDeclaration[] = [
   {
     name: "query_transactions",
     description:
       "Filter and aggregate the user's categorized transactions across all banks. Returns totals (money in, money out, net, count), optional groups, and the largest matching transactions. Amounts are in the user's currency; outflows are negative in samples. Use this for any question about how much was spent/earned, where, when, or at which bank.",
-    input_schema: {
+    parametersJsonSchema: {
       type: "object",
       properties: {
         start_date: { type: "string", description: "Inclusive ISO date YYYY-MM-DD" },
@@ -74,27 +74,24 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
       },
       additionalProperties: false,
     },
-    eager_input_streaming: true,
   },
   {
     name: "get_financial_overview",
     description:
       "Net worth by account, KPIs (cash flow, savings rate, burn rate, runway) for the latest month, and monthly income/expense totals for the last 12 months.",
-    input_schema: { type: "object", properties: {}, additionalProperties: false },
-    eager_input_streaming: true,
+    parametersJsonSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "get_subscriptions_and_savings",
     description:
       "Detected recurring charges (subscriptions, rent, bills) and recurring income, merchant concentration, and ranked savings opportunities with estimated yearly savings.",
-    input_schema: { type: "object", properties: {}, additionalProperties: false },
-    eager_input_streaming: true,
+    parametersJsonSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "run_forecast",
     description:
       "Project the balance forward from recurring and typical variable flows, optionally with a what-if scenario. Returns monthly projected balance with an ~80% range.",
-    input_schema: {
+    parametersJsonSchema: {
       type: "object",
       properties: {
         horizon_months: { type: "integer", description: "3, 6 or 12" },
@@ -107,7 +104,6 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
       required: ["horizon_months"],
       additionalProperties: false,
     },
-    eager_input_streaming: true,
   },
 ];
 
@@ -303,72 +299,69 @@ function dataContext(data: CopilotData): string {
 }
 
 /**
- * Manual agentic loop with streaming. Each round streams text to the client; tool calls are
- * executed locally against the user's data and fed back until the model ends its turn.
- * Prior chat turns are sent as plain text, and the current turn is append-only, so thinking
- * blocks are always replayed unchanged within the loop.
+ * Manual agentic loop with streaming. Each round streams text to the client; function calls are
+ * executed locally against the user's data and fed back until the model answers in plain text.
+ * The model's turn is appended unchanged (including thought signatures), as Gemini requires.
  */
 export async function* runCopilot(history: ChatTurn[], data: CopilotData, signal?: AbortSignal): AsyncGenerator<CopilotEvent> {
-  const client = getAnthropic();
-  const messages: Anthropic.Beta.BetaMessageParam[] = history.map((t) => ({ role: t.role, content: t.content }));
+  const ai = getGemini();
+  const contents: Content[] = history.map((t) => ({ role: t.role === "assistant" ? "model" : "user", parts: [{ text: t.content }] }));
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const stream = client.beta.messages.stream(
-      {
-        model: AI_MODEL,
-        max_tokens: 16000,
-        betas: [FALLBACK_BETA],
-        fallbacks: "default",
-        output_config: { effort: "medium" },
-        system: [
-          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-          { type: "text", text: dataContext(data) },
-        ],
-        tools: TOOLS,
-        messages,
+    const stream = await ai.models.generateContentStream({
+      model: AI_MODEL,
+      contents,
+      config: {
+        systemInstruction: `${SYSTEM_PROMPT}\n\n${dataContext(data)}`,
+        tools: [{ functionDeclarations: TOOLS }],
+        abortSignal: signal,
       },
-      { signal },
-    );
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") yield { type: "text", text: event.delta.text };
-    }
-    const message = await stream.finalMessage();
+    });
 
-    if (message.stop_reason === "refusal") {
+    const parts: Part[] = [];
+    const calls: FunctionCall[] = [];
+    let finishReason: string | undefined;
+    for await (const chunk of stream) {
+      const candidate = chunk.candidates?.[0];
+      finishReason = candidate?.finishReason ?? finishReason;
+      for (const part of candidate?.content?.parts ?? []) {
+        parts.push(part);
+        if (part.functionCall) calls.push(part.functionCall);
+        else if (part.text && !part.thought) yield { type: "text", text: part.text };
+      }
+    }
+
+    if (finishReason === "SAFETY" || finishReason === "PROHIBITED_CONTENT" || finishReason === "BLOCKLIST") {
       yield { type: "error", message: "The assistant declined to answer that request." };
       break;
     }
-    if (message.stop_reason !== "tool_use") {
-      if (message.stop_reason === "max_tokens") yield { type: "text", text: "\n\n_(Response truncated.)_" };
+    if (!calls.length) {
+      if (finishReason === "MAX_TOKENS") yield { type: "text", text: "\n\n_(Response truncated.)_" };
       break;
     }
 
-    messages.push({ role: "assistant", content: message.content });
-    const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
-    for (const block of message.content) {
-      if (block.type !== "tool_use") continue;
-      yield { type: "tool", name: block.name, label: TOOL_LABELS[block.name] ?? block.name };
+    contents.push({ role: "model", parts });
+    const responses: Part[] = [];
+    for (const call of calls) {
+      const name = call.name ?? "";
+      yield { type: "tool", name, label: TOOL_LABELS[name] ?? name };
+      let response: Record<string, unknown>;
       try {
-        // With eager input streaming the API does not validate inputs; the zod parse inside each tool does.
-        const output = executeTool(block.name, block.input ?? {}, data);
-        results.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(output) });
+        response = { output: executeTool(name, call.args ?? {}, data) };
       } catch (err) {
-        const msg =
-          err instanceof z.ZodError ? `INVALID_INPUT: ${err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}` : (err as Error).message;
-        results.push({ type: "tool_result", tool_use_id: block.id, content: msg, is_error: true });
+        response = {
+          error: err instanceof z.ZodError ? `INVALID_INPUT: ${err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}` : (err as Error).message,
+        };
       }
+      responses.push({ functionResponse: { id: call.id, name, response } });
     }
-    messages.push({ role: "user", content: results });
-    if (round === MAX_TOOL_ROUNDS - 1) yield { type: "text", text: "\n\n_(Stopped after too many lookups — try a more specific question.)_" };
+    contents.push({ role: "user", parts: responses });
+    if (round === MAX_TOOL_ROUNDS - 1) yield { type: "text", text: "\n\n_(Stopped after too many lookups. Try a more specific question.)_" };
   }
   yield { type: "done" };
 }
 
 export function describeCopilotError(err: unknown): string {
-  if (err instanceof Anthropic.AuthenticationError || isMissingCredentials(err))
-    return "The Copilot needs Anthropic credentials. Set ANTHROPIC_API_KEY in your environment and restart the server.";
-  if (err instanceof Anthropic.RateLimitError) return "The Copilot is rate limited right now. Try again in a moment.";
-  if (err instanceof Anthropic.APIConnectionError) return "Couldn't reach the Anthropic API. Check your network connection.";
-  if (err instanceof Anthropic.APIError) return `The AI service returned an error (${err.status ?? "unknown"}).`;
-  return "Something went wrong while answering.";
+  const reason = describeAiFailure(err);
+  return `The Copilot couldn't answer: ${reason}.`;
 }
