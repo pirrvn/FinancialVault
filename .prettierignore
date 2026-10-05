@@ -1,0 +1,6 @@
+src/generated
+node_modules
+.next
+prisma/migrations
+samples
+tests/fixtures

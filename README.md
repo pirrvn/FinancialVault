@@ -1,2 +1,143 @@
-# FinancialVault
-A comprehensive, production-ready personal finance and wealth management dashboard. Ingests bank statements from Revolut &amp; Crédit Agricole, normalizes data with AI-powered smart categorization, provides deep analytics, and features an integrated AI financial copilot.
+# FinanceVault
+
+A private personal-finance and wealth dashboard for **Revolut** and **Crédit Agricole** statements. It imports monthly CSV exports, normalizes them into one ledger and categorizes every transaction through a three-tier pipeline (rules, then AI, then you). On top of that it shows net worth, cash flow, subscriptions, a forecast with what-if scenarios, and a Copilot you can ask questions about your money.
+
+Built with Next.js 16 (App Router), TypeScript, Tailwind CSS 4, shadcn-style components on Radix and cmdk, Recharts, PostgreSQL via Prisma 7, and the Anthropic SDK (Claude).
+
+---
+
+## Quick start
+
+```bash
+# 1. Postgres (or point DATABASE_URL at your own instance)
+docker compose up -d
+
+# 2. Configure
+cp .env.example .env            # set ANTHROPIC_API_KEY to enable AI categorization + Copilot
+
+# 3. Install, migrate, run
+npm install                     # also runs `prisma generate`
+npm run db:deploy
+npm run dev                     # http://localhost:3000
+```
+
+To try it without real statements, run `npm run samples`. It writes 12 months of realistic exports to `samples/`: one Revolut CSV plus monthly Crédit Agricole files in Windows-1252. Drop them on the **Import** page.
+
+| Script | What it does |
+| --- | --- |
+| `npm test` | Vitest suite: parsers, merchant normalization, rule engine, pipeline, analytics, Copilot tool loop |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run build` | Production build |
+| `npm run samples [YYYY-MM]` | Regenerate demo statements ending at the given month |
+| `npm run format` | Prettier, with the Tailwind class sorter |
+
+FinanceVault still works without an API key. Rules and the built-in lexicon categorize what they can, everything else gets a default category and is flagged for one-click review, and the Copilot shows a setup message.
+
+---
+
+## Directory structure
+
+```
+prisma/
+  schema.prisma              Users, Accounts, Categories, CategorizationRules, Transactions, ImportBatches
+  migrations/
+src/
+  app/
+    (app)/                   Authenticated app shell (sidebar, ⌘K palette, Copilot drawer)
+      page.tsx               Overview dashboard
+      transactions/          Ledger with inline categorization
+      insights/              Subscriptions, concentration, savings opportunities
+      forecast/              3/6/12-month projection + what-if simulator
+      rules/                 Rule management
+      import/                Drag-and-drop ingestion + history
+    api/
+      upload/                POST multipart statements → ImportSummary[]
+      copilot/               POST chat → streamed NDJSON events
+      transactions/          GET list · PATCH /:id manual override (+ learning)
+      rules/                 GET rules
+  lib/
+    parsers/                 revolut.ts · credit-agricole.ts · csv.ts (encoding/delimiter sniffing) · detection
+    categorization/
+      merchant.ts            Bank-noise stripping → stable merchant keys
+      rules.ts               Rule compiler/matcher (priority, specificity, direction, account scope)
+      pipeline.ts            The 3-tier pipeline (pure, dependency-injected AI)
+      defaults.ts            Default categories + French/EU merchant lexicon
+    ai/
+      client.ts              Anthropic client, model, refusal-fallback beta
+      categorize.ts          Tier 2: batched structured-output categorization
+      copilot.ts             Copilot agent loop + tools over your data
+    analytics/               summary (KPIs, series, balance curve) · recurring · concentration · opportunities · forecast
+    services/                import · learning (override, reapply) · queries · user
+    actions.ts               Server Actions (override, confirm, rules CRUD, categories, notes)
+  components/
+    ui/                      Button, Card, Input/Select/Kbd, Segmented, Sheet, Slider, Switch, Toast
+    charts/                  Cash-flow, balance, bar lists, tooltip/legend, theme-token bridge
+    dashboard/ transactions/ insights/ forecast/ rules/ import/ copilot/
+tests/                       Vitest + fixtures (real-format Revolut/CA files)
+scripts/generate-samples.ts  Demo statement generator
+```
+
+---
+
+## How it works
+
+### Ingestion
+
+- **Revolut**: handles the current `Type,Product,Started Date,Completed Date,…` export (English or French headers) and the legacy `Paid Out/Paid In` format. Fees are netted into the amount. `REVERTED`/`DECLINED` rows are dropped. `PENDING` rows are skipped with a warning, because they change date and amount when they settle. Each product and currency pair becomes its own account (`Current:EUR`, `Current:USD`, …), and the statement's running balance becomes the account balance.
+- **Crédit Agricole**: semicolon CSV, often **Windows-1252** (detected automatically), with `DD/MM/YYYY` dates, `1 234,56` amounts, labels that span several lines inside quotes, and a preamble. The account number and the `Solde au …` closing balance are read from the preamble. Both `Débit/Crédit` and signed `Montant` layouts work.
+- **Idempotent re-imports**: each row gets a fingerprint (account, day, amount, normalized label, and an occurrence index for identical same-day rows). Re-uploading a statement, or uploading overlapping ones, never duplicates anything.
+- **Balances only move forward**: importing an older statement never rewinds an account's balance.
+
+### Categorization: the zero-uncategorized guarantee
+
+1. **Rules.** Every transaction is checked against compiled rules ordered by priority: **learned** (1000) › **yours** (500) › **AI** (200) › **built-in lexicon** (100). Ties go to the longer, more specific pattern, so `UBER EATS` beats `UBER`. `CONTAINS` matches at word starts, so `FEE` doesn't match `COFFEE`. Rules can be limited to money in or money out, and to one account.
+2. **AI.** Transactions that are still unmatched are grouped by *merchant and direction* and sent to Claude in batches, using structured outputs with the category list as an enum. That's one decision per merchant, not per row. The model's category must agree with the money direction, so an expense can't land in Salary. Answers with ≥ 0.7 confidence are **saved as AI rules**, so the same merchant is never sent twice. Answers below 0.85 are flagged for review.
+3. **Fallback + you.** Anything still unresolved, including when there's no API key or the API is down, is assigned *Miscellaneous* or *Other income* and flagged. Fixing it in the table takes one click (or the keyboard: `C`). That **creates a learned merchant rule** and, by default, re-categorizes every similar transaction that you haven't already set manually.
+
+Merchant keys come from `merchant.ts`, which strips the noise French banks wrap around merchant names (`PAIEMENT PAR CARTE X1234 … 04/02`, `PRLV SEPA … MDT/…`, `VIR SEPA RECU /DE … /MOTIF …`, card masks, dates, references). That way `CB CARREFOUR CITY 12/03` and `PAIEMENT PAR CARTE X4821 CARREFOUR CITY 04/02` both become `CARREFOUR CITY`.
+
+### Analytics
+
+- **KPIs** are anchored on a selectable month. Net worth is the sum of statement balances, rolled forward by any later transactions. Cash flow covers the month. Savings rate and burn rate use a trailing 3-month window, and runway is net worth divided by burn rate. Transfers between your own accounts and into savings never count as income or spending. Refunds booked in an expense category reduce that category's spend.
+- **Recurring detection** looks at intervals per merchant (weekly, monthly, quarterly, yearly, with tolerances and a ≥ 70 % regularity requirement) and at amount stability (median absolute deviation). It reports active vs stopped charges, next expected date, monthly and yearly cost, and price increases.
+- **Savings opportunities** cover overlapping services (e.g. two video streaming apps), price increases, category spikes vs the trailing average, bank fees, merchant concentration (HHI), and the load from discretionary subscriptions. Each is ranked by estimated yearly savings.
+- **Forecast** splits history into committed flows (detected recurring income and expenses) and variable spend (the median per category over 6 months). It projects 3, 6 or 12 months with inflation and an ~80 % band derived from the volatility of monthly net cash flow. The what-if simulator (income and spend sliders, per-category changes, cancelling subscriptions, one-off or recurring events) runs **in the browser**, so results update instantly.
+
+### Copilot
+
+The drawer (`⌘J`, or type a question into `⌘K`) streams answers from Claude. Claude doesn't receive your raw ledger. Instead it calls tools that run on the server against your data:
+
+- `query_transactions` filters by date, category, kind, bank and merchant, with totals and grouping
+- `get_financial_overview`
+- `get_subscriptions_and_savings`
+- `run_forecast` (what-if parameters)
+
+So an answer like *"how much did I spend on dining out across both banks this month?"* is computed, not estimated. The loop is append-only within a turn. It handles `refusal` and `max_tokens` stop reasons, and enables Anthropic's server-side refusal fallback (`fallbacks: "default"`).
+
+### Design system
+
+Apple-inspired: system font stack (SF Pro on Apple devices), `rounded-3xl` cards with hairline shadows, glass sidebar and sheets, iOS segmented controls and switches, restrained motion (all animations respect `prefers-reduced-motion`), and dark mode tuned separately from light mode rather than inverted. Category colors are muted tones used **only next to an icon and a text label**. Charts encode series with a colorblind-validated blue/orange pair. Part-to-whole breakdowns use directly-labelled bar lists instead of donuts, so identity never depends on color alone.
+
+**Keyboard**: `⌘K` command palette · `⌘J` Copilot · `G` then `O/T/I/F/R/U` to navigate · in Transactions: `/` search, `J/K` move, `C` or `↵` categorize, `Y` confirm, `O` details.
+
+---
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | — | PostgreSQL connection string |
+| `ANTHROPIC_API_KEY` | — | Enables AI categorization and the Copilot (an `ant auth login` profile also works) |
+| `FINANCEVAULT_AI_MODEL` | `claude-opus-5-5` | Claude model used for both features |
+| `FINANCEVAULT_USER_EMAIL` | `owner@financevault.local` | Identity of the single owner (see below) |
+
+## Privacy
+
+Statement files are parsed on your server and never sent anywhere. With AI enabled, the categorizer sends Anthropic only *unrecognized* merchants: normalized name, up to three sample descriptions, direction, typical amount and bank. The Copilot sends your question plus the aggregated tool results it asks for. Nothing is sent when no API key is set.
+
+## Current limitations
+
+- **Single user.** `getCurrentUser()` upserts one owner, but every query is scoped by `userId`. To make it multi-tenant, add an auth provider (Auth.js, Clerk, …) and replace that one function with a session lookup. **Don't expose the app publicly without adding authentication.**
+- **CSV only.** Crédit Agricole's PDF, Excel and OFX exports aren't parsed yet. Export as CSV.
+- **One base currency.** Analytics use the base currency (EUR). Accounts in other currencies (e.g. a Revolut USD pocket) are listed with their balance but not converted.
+- The forecast is a statistical projection from your own history, not financial advice.
