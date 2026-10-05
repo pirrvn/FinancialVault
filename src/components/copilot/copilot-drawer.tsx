@@ -163,7 +163,7 @@ export function CopilotDrawer() {
             }}
             rows={1}
             placeholder="Ask about your spending…"
-            className="max-h-32 min-h-[36px] flex-1 resize-none bg-transparent py-2 text-[14px] outline-none placeholder:text-subtle"
+            className="max-h-32 min-h-[36px] flex-1 resize-none bg-transparent py-2 text-[16px] outline-none placeholder:text-subtle sm:text-[14px]"
             autoFocus
           />
           {busy ? (

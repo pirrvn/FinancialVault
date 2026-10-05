@@ -6,7 +6,9 @@ export interface PipelineCategory {
   id: string;
   name: string;
   kind: Kind;
-  description?: string;
+  description?: string | null;
+  /** Built-in identity (original name); fallback categories are found by it, so renaming is safe. */
+  systemKey?: string | null;
 }
 
 export interface PipelineTransaction extends MatchableTransaction {
@@ -136,8 +138,8 @@ export async function runPipeline(transactions: PipelineTransaction[], opts: Pip
   }
 
   // Tier 3 — deterministic fallback: never leave a transaction uncategorized
-  const fallbackExpense = byName.get(FALLBACK_EXPENSE) ?? opts.categories.find((c) => c.kind === "EXPENSE");
-  const fallbackIncome = byName.get(FALLBACK_INCOME) ?? opts.categories.find((c) => c.kind === "INCOME");
+  const fallbackExpense = fallbackCategory(opts.categories, "EXPENSE");
+  const fallbackIncome = fallbackCategory(opts.categories, "INCOME");
   if (!fallbackExpense || !fallbackIncome) throw new Error("Category set must include at least one EXPENSE and one INCOME category.");
   const final = decisions.map((d, i) => {
     if (d) return d;
@@ -147,4 +149,10 @@ export async function runPipeline(transactions: PipelineTransaction[], opts: Pip
   });
   stats.needsReview = final.filter((d) => d.needsReview).length;
   return { decisions: final, aiRules, ruleHits, stats, warnings };
+}
+
+/** The built-in catch-all for a direction ("Miscellaneous" / "Other Income"), whatever it was renamed to. */
+export function fallbackCategory<T extends PipelineCategory>(categories: T[], kind: "EXPENSE" | "INCOME"): T | undefined {
+  const key = kind === "EXPENSE" ? FALLBACK_EXPENSE : FALLBACK_INCOME;
+  return categories.find((c) => c.systemKey === key) ?? categories.find((c) => c.name === key) ?? categories.find((c) => c.kind === kind);
 }

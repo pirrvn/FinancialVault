@@ -58,6 +58,13 @@ const FR_MONTHS = ["JANVIER", "FEVRIER", "MARS", "AVRIL", "MAI", "JUIN", "JUILLE
 
 const center = (i: PdfTextItem) => i.x + i.width / 2;
 
+/** Label text without the statement's tick-box glyphs ("¨", "þ") or other symbol-only items. */
+const labelText = (items: PdfTextItem[]) =>
+  items
+    .map((i) => i.str.trim())
+    .filter((t) => /[\p{L}\p{N}]/u.test(t))
+    .join(" ");
+
 /** Strip glyph markers some statements print next to amounts (e.g. "¨", "þ", "€"). */
 function cleanAmountText(s: string): string {
   return s.replace(/[^\d,.\s  ]/g, "").trim();
@@ -236,7 +243,7 @@ export function parseCreditAgricolePdfItems(pages: PdfTextItem[][]): PdfParseRes
       }
       const amt = trailingAmount(line.items);
       const labelItems = line.items.slice(idx, amt ? line.items.length - amt.consumed : undefined);
-      const label = labelItems.map((i) => i.str.trim()).join(" ");
+      const label = labelText(labelItems);
       if (!date || !label) {
         skipped++;
         continue;
@@ -262,7 +269,7 @@ export function parseCreditAgricolePdfItems(pages: PdfTextItem[][]): PdfParseRes
       const amt = trailingAmount(line.items);
       const rest = amt ? line.items.slice(0, line.items.length - amt.consumed) : line.items;
       if (amt && open.tx.amountCents === 0) open.tx.amountCents = amt.cents * sideOf(amt.item);
-      const extra = rest.map((i) => i.str.trim()).join(" ");
+      const extra = labelText(rest);
       if (extra) open.tx.rawDescription = `${open.tx.rawDescription} ${extra}`.replace(/\s+/g, " ").trim();
       open.line = line;
       continue;

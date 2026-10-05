@@ -10,6 +10,9 @@ export interface CategoryDTO {
   color: string;
   icon: string;
   isSystem: boolean;
+  description: string | null;
+  systemKey: string | null;
+  archived: boolean;
 }
 
 export interface TransactionDTO extends AnalyticsTx {
@@ -22,9 +25,23 @@ export interface TransactionDTO extends AnalyticsTx {
   note: string | null;
 }
 
-export async function getCategories(userId: string): Promise<CategoryDTO[]> {
-  const cats = await prisma.category.findMany({ where: { userId }, orderBy: [{ kind: "asc" }, { name: "asc" }] });
-  return cats.map((c) => ({ id: c.id, name: c.name, kind: c.kind, color: c.color, icon: c.icon, isSystem: c.isSystem }));
+/** Visible categories (pickers, filters). Pass includeArchived for the Categories screen. */
+export async function getCategories(userId: string, opts: { includeArchived?: boolean } = {}): Promise<CategoryDTO[]> {
+  const cats = await prisma.category.findMany({
+    where: { userId, ...(opts.includeArchived ? {} : { archived: false }) },
+    orderBy: [{ kind: "asc" }, { name: "asc" }],
+  });
+  return cats.map((c) => ({
+    id: c.id,
+    name: c.name,
+    kind: c.kind,
+    color: c.color,
+    icon: c.icon,
+    isSystem: c.isSystem,
+    description: c.description,
+    systemKey: c.systemKey,
+    archived: c.archived,
+  }));
 }
 
 export async function getTransactions(userId: string, opts: { since?: Date } = {}): Promise<TransactionDTO[]> {

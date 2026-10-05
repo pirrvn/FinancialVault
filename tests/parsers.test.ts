@@ -4,7 +4,7 @@ import { detectInstitution, parseStatement } from "@/lib/parsers";
 import { decodeStatement } from "@/lib/parsers/csv";
 import { parseAmountToCents } from "@/lib/money";
 import { parseFrenchDate } from "@/lib/dates";
-import { merchantKey } from "@/lib/categorization/merchant";
+import { merchantDisplayName, merchantKey } from "@/lib/categorization/merchant";
 
 const fixture = (name: string) => new Uint8Array(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
 
@@ -99,5 +99,25 @@ describe("merchant normalization", () => {
     ["Netflix", "NETFLIX"],
     ["Café de Flore", "CAFE DE FLORE"],
     ["AMAZON PAYMENTS EUROPE 4DE2F*K91", "AMAZON PAYMENTS EUROPE"],
+    ["Carte X2416 Le Xvi Balto Paris 12/04", "LE XVI BALTO"],
+    ["Carte X2416 Sq *noir Coffee Shop 25/04", "NOIR COFFEE SHOP"],
+    ["Carte X2416 MONOP4801 Paris 24/04", "MONOP"],
+    ["Carte X2416 Uber * Eats Pending 12/04", "UBER EATS"],
+    ["Carte X2416 La Terrasse Mira Par 18/04", "LA TERRASSE MIRA"],
+    ["Carte X2416 P H I S E R Paris 20/04", "PHISER"],
+    ["Virement Vir Inst Wero de Mr Jean Dupont", "JEAN DUPONT"],
+    ["Virement Wero vers Jean Dupont", "JEAN DUPONT"],
+    ["Prlv Prixtel", "PRIXTEL"],
+    ["Cotis ** Offre Essentiel", "OFFRE ESSENTIEL"],
   ])("%s -> %s", (raw, key) => expect(merchantKey(raw)).toBe(key));
+
+  it("never builds a key from dates or amounts", () => {
+    expect(merchantKey("Carte X2416 12/04 9,99")).not.toMatch(/\d/);
+  });
+
+  it.each([
+    ["LE XVI BALTO", "Carte X2416 Le Xvi Balto Paris 12/04", "Le Xvi Balto"],
+    ["NOIR COFFEE SHOP", "Carte X2416 Sq *noir Coffee Shop 25/04", "Noir Coffee Shop"],
+    ["CARREFOUR CITY", "PAIEMENT PAR CARTE X4821 CARREFOUR CITY 04/02", "Carrefour City"],
+  ])("display name of %s", (key, raw, name) => expect(merchantDisplayName(key, raw)).toBe(name));
 });

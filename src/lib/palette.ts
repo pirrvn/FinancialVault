@@ -26,6 +26,9 @@ export const PALETTE: Record<string, string> = {
   seafoam: "#7CBDB0",
   mist: "#9BB0C1",
   indigo: "#7A86C2",
+  wine: "#A8687A",
+  espresso: "#9B7B66",
+  honey: "#C9A25A",
 };
 
 export const PALETTE_KEYS = Object.keys(PALETTE);

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { extractPdfItems, parseCreditAgricolePdfItems, type PdfParseResult } from "@/lib/parsers/credit-agricole-pdf";
 import { parseStatement, StatementParseError } from "@/lib/parsers";
-import { buildCaStatementPdf, SAMPLE_OPS } from "./helpers/ca-pdf";
+import { buildCaStatementPdf, buildModernCaStatementPdf, MODERN_OPS, SAMPLE_OPS } from "./helpers/ca-pdf";
 
 const base = {
   arrete: "31 Janvier 2025",
@@ -68,6 +68,38 @@ describe("Crédit Agricole PDF statement", async () => {
     );
     expect(r.reconciled).toBe(true);
     expect(r.balances["ACC-12345678901"].cents).toBe(114673);
+  });
+});
+
+describe("current (2026) Crédit Agricole layout", async () => {
+  const pdf = await buildModernCaStatementPdf({
+    arrete: "06 Mai 2026",
+    holder: "Monsieur Jean Dupont",
+    accountNumber: "11122233344",
+    ancien: { date: "07.04.2026", amount: "1 000,00" },
+    nouveau: { date: "06.05.2026", amount: "1 357,65" },
+    ops: MODERN_OPS,
+    opsPerPage: 7,
+  });
+  const r = parseCreditAgricolePdfItems(await extractPdfItems(pdf));
+
+  it("reads every operation across pages and reconciles", () => {
+    expect(r.transactions).toHaveLength(MODERN_OPS.length);
+    expect(r.reconciled).toBe(true);
+    expect(r.balances["ACC-11122233344"]).toEqual({ cents: 135765, asOf: new Date("2026-05-06T00:00:00Z") });
+  });
+
+  it("keeps type words and card dates in the label, without tick-box glyphs", () => {
+    expect(r.transactions.map((t) => t.rawDescription)).toContain("Carte X1111 Intermarche Paris 11/04");
+    expect(r.transactions.map((t) => t.rawDescription)).toContain("Prlv Prixtel");
+    expect(r.transactions.every((t) => !/[¨þ]/.test(t.rawDescription))).toBe(true);
+  });
+
+  it("signs debit and credit correctly from the column positions", () => {
+    const amounts = Object.fromEntries(r.transactions.map((t) => [t.rawDescription.split(" ").slice(0, 4).join(" "), t.amountCents]));
+    expect(amounts["Virement Vir Inst Wero"]).toBe(2000);
+    expect(amounts["Virement Wero vers Marie"]).toBe(-7500);
+    expect(r.transactions.find((t) => t.rawDescription.includes("PAIE0426"))!.amountCents).toBe(102864);
   });
 });
 

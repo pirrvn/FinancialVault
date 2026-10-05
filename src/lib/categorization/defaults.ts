@@ -1,6 +1,7 @@
 export type Kind = "EXPENSE" | "INCOME" | "TRANSFER";
 
 export interface DefaultCategory {
+  /** Original name; stored as the category's systemKey so users can rename it safely. */
   name: string;
   kind: Kind;
   color: string; // palette token, see lib/palette.ts
@@ -8,70 +9,137 @@ export interface DefaultCategory {
   description: string; // given to the AI categorizer
 }
 
-/** Category names referenced by code. Changing these requires a data migration. */
+/**
+ * Bump when DEFAULT_CATEGORIES or SYSTEM_RULES change. Existing users are upgraded on their next
+ * page load (services/user.ts): missing categories are added, the built-in lexicon is re-synced,
+ * and rules are re-applied to non-manual history.
+ */
+export const DEFAULTS_VERSION = 2;
+
+/** systemKeys referenced by code. These categories can be renamed but never deleted. */
 export const FALLBACK_EXPENSE = "Miscellaneous";
 export const FALLBACK_INCOME = "Other Income";
 export const TRANSFER_CATEGORY = "Transfers";
+export const PROTECTED_SYSTEM_KEYS = new Set([FALLBACK_EXPENSE, FALLBACK_INCOME, TRANSFER_CATEGORY]);
 
 export const DEFAULT_CATEGORIES: DefaultCategory[] = [
-  { name: "Groceries", kind: "EXPENSE", color: "sage", icon: "ShoppingBasket", description: "Supermarkets, food stores, bakeries, markets" },
-  { name: "Dining Out", kind: "EXPENSE", color: "terracotta", icon: "UtensilsCrossed", description: "Restaurants, cafés, bars, fast food, food delivery" },
+  {
+    name: "Groceries",
+    kind: "EXPENSE",
+    color: "sage",
+    icon: "ShoppingBasket",
+    description: "Supermarkets, mini-markets, organic stores, frozen food, food markets",
+  },
+  {
+    name: "Dining Out",
+    kind: "EXPENSE",
+    color: "terracotta",
+    icon: "UtensilsCrossed",
+    description: "Meals at restaurants, fast food, takeaway and food delivery (Uber Eats, Deliveroo). Not bars, drinks or quick coffees.",
+  },
+  {
+    name: "Bars & Nightlife",
+    kind: "EXPENSE",
+    color: "wine",
+    icon: "Beer",
+    description: "Bars, pubs, terrace drinks, apéro, beers, cocktails, sharing boards (planches), clubs and nights out",
+  },
+  {
+    name: "Coffee & Snacks",
+    kind: "EXPENSE",
+    color: "espresso",
+    icon: "Coffee",
+    description: "Coffee shops, a coffee at a café counter or terrace, vending machines (Maxicoffee, Selecta, Nayax), bakeries and quick snacks",
+  },
+  {
+    name: "Canteen",
+    kind: "EXPENSE",
+    color: "honey",
+    icon: "Soup",
+    description: "School or company canteen and cafeteria: meals and meal-card top-ups (company restaurant, CROUS, Izly, Sodexo, Elior)",
+  },
   {
     name: "Transport",
     kind: "EXPENSE",
     color: "slate",
     icon: "TramFront",
-    description: "Public transit, ride hailing, taxis, fuel, parking, tolls, car rental, bikes/scooters",
+    description: "Public transit, Navigo, ride hailing, taxis, bike and scooter rentals (Vélib, Lime, Dott), fuel, parking, tolls",
   },
   { name: "Housing", kind: "EXPENSE", color: "stone", icon: "House", description: "Rent, mortgage payments, property fees, home maintenance" },
   { name: "Utilities", kind: "EXPENSE", color: "steel", icon: "Plug", description: "Electricity, gas, water, internet, mobile phone plans" },
-  { name: "Subscriptions", kind: "EXPENSE", color: "lavender", icon: "Repeat", description: "Streaming, software, SaaS, memberships, cloud storage" },
-  { name: "Shopping", kind: "EXPENSE", color: "rose", icon: "ShoppingBag", description: "Clothing, electronics, online marketplaces, home goods" },
+  {
+    name: "Subscriptions",
+    kind: "EXPENSE",
+    color: "lavender",
+    icon: "Repeat",
+    description: "Streaming, music, software, apps and in-app purchases (Apple, Google), cloud storage, memberships",
+  },
+  { name: "Shopping", kind: "EXPENSE", color: "rose", icon: "ShoppingBag", description: "Clothing, electronics, online stores and marketplaces, home goods" },
   { name: "Health", kind: "EXPENSE", color: "mint", icon: "HeartPulse", description: "Pharmacy, doctors, dentists, opticians, mutuelle co-pays" },
-  { name: "Entertainment", kind: "EXPENSE", color: "plum", icon: "Ticket", description: "Cinema, concerts, events, games, hobbies" },
-  { name: "Travel", kind: "EXPENSE", color: "ocean", icon: "Plane", description: "Flights, trains for trips, hotels, holiday rentals" },
-  { name: "Education", kind: "EXPENSE", color: "ochre", icon: "GraduationCap", description: "Courses, books, tuition, school fees" },
+  { name: "Entertainment", kind: "EXPENSE", color: "plum", icon: "Ticket", description: "Cinema, concerts, events, races, museums, games, hobbies" },
+  { name: "Travel", kind: "EXPENSE", color: "ocean", icon: "Plane", description: "Train tickets (SNCF), flights, hotels, holiday rentals" },
+  { name: "Education", kind: "EXPENSE", color: "ochre", icon: "GraduationCap", description: "Tuition, school fees, courses, books, school supplies" },
   { name: "Personal Care", kind: "EXPENSE", color: "blush", icon: "Sparkles", description: "Hairdresser, beauty, gym, wellness" },
-  { name: "Insurance", kind: "EXPENSE", color: "fog", icon: "ShieldCheck", description: "Home, car, health, life insurance premiums" },
+  { name: "Insurance", kind: "EXPENSE", color: "fog", icon: "ShieldCheck", description: "Home, car, health, life insurance premiums (usually direct debits)" },
   { name: "Taxes", kind: "EXPENSE", color: "graphite", icon: "Landmark", description: "Income tax, property tax, government fees" },
-  { name: "Fees & Charges", kind: "EXPENSE", color: "clay", icon: "Receipt", description: "Bank fees, card fees, overdraft charges, FX fees" },
+  { name: "Fees & Charges", kind: "EXPENSE", color: "clay", icon: "Receipt", description: "Bank account and card fees, overdraft charges, FX fees" },
   { name: "Cash", kind: "EXPENSE", color: "sand", icon: "Banknote", description: "ATM withdrawals" },
-  { name: "Gifts & Donations", kind: "EXPENSE", color: "coral", icon: "Gift", description: "Gifts, charity, donations" },
+  { name: "Gifts & Donations", kind: "EXPENSE", color: "coral", icon: "Gift", description: "Gifts, charity, donations, prize pools (cagnottes)" },
   { name: "Kids & Family", kind: "EXPENSE", color: "peach", icon: "Baby", description: "Childcare, school activities, family expenses" },
   { name: "Pets", kind: "EXPENSE", color: "moss", icon: "PawPrint", description: "Vet, pet food, pet supplies" },
   { name: FALLBACK_EXPENSE, kind: "EXPENSE", color: "ash", icon: "CircleDashed", description: "Expenses that fit no other category" },
-  { name: "Salary", kind: "INCOME", color: "emerald", icon: "BriefcaseBusiness", description: "Wages, payroll, bonuses" },
-  { name: "Refunds", kind: "INCOME", color: "teal", icon: "Undo2", description: "Merchant refunds, reimbursements (e.g. CPAM, mutuelle)" },
-  { name: "Investment Income", kind: "INCOME", color: "jade", icon: "TrendingUp", description: "Interest, dividends, capital gains" },
+  {
+    name: "Salary",
+    kind: "INCOME",
+    color: "emerald",
+    icon: "BriefcaseBusiness",
+    description: "Wages, payroll, apprenticeship pay, internship stipends, bonuses",
+  },
+  { name: "Refunds", kind: "INCOME", color: "teal", icon: "Undo2", description: "Merchant refunds, reimbursements (CPAM, mutuelle, employer expenses)" },
+  { name: "Investment Income", kind: "INCOME", color: "jade", icon: "TrendingUp", description: "Interest (livret), dividends, capital gains" },
   { name: FALLBACK_INCOME, kind: "INCOME", color: "seafoam", icon: "Coins", description: "Any other incoming money" },
   {
     name: TRANSFER_CATEGORY,
     kind: "TRANSFER",
     color: "mist",
     icon: "ArrowLeftRight",
-    description: "Moves between the user's own accounts, top-ups, currency exchanges",
+    description: "Moves between the user's own accounts (e.g. Crédit Agricole ↔ Revolut), top-ups, currency exchanges",
   },
   {
     name: "Savings & Investments",
     kind: "TRANSFER",
     color: "indigo",
     icon: "PiggyBank",
-    description: "Transfers into savings, brokerage, crypto, pension accounts",
+    description: "Transfers into savings (Livret A, LDDS), brokerage, crypto, pension accounts",
   },
 ];
 
+export interface SystemRule {
+  pattern: string;
+  category: string; // systemKey of the target category
+  direction?: "DEBIT" | "CREDIT";
+  /** CONTAINS (default) matches at a word start; REGEX for patterns that need more precision. */
+  matchType?: "CONTAINS" | "REGEX";
+}
+
+const contains = (category: string, direction: SystemRule["direction"], patterns: string[]): SystemRule[] =>
+  patterns.map((pattern) => ({ pattern, category, direction }));
+
+/** Card-payment prefixes on French statements; used to keep some brands to direct debits only. */
+const NOT_A_CARD_PAYMENT = String.raw`^(?!(CARTE|CB|PAIEMENT PAR CARTE|PAIEMENT CB|ACHAT CB)\b)`;
+
 /**
- * Built-in keyword lexicon (lowest priority). Patterns are matched with CONTAINS against the
- * normalized description. Users can override any of these with their own or learned rules.
+ * Built-in keyword lexicon (lowest priority). Patterns are matched against the normalized
+ * description (upper-case, no accents, "*" treated as a space). Users override any of these
+ * with their own or learned rules.
  */
-export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEBIT" | "CREDIT" }[] = [
-  // Groceries
-  ...[
+export const SYSTEM_RULES: SystemRule[] = [
+  ...contains("Groceries", undefined, [
     "CARREFOUR",
     "LECLERC",
     "AUCHAN",
     "INTERMARCHE",
-    "MONOPRIX",
+    "MONOP",
     "FRANPRIX",
     "LIDL",
     "ALDI",
@@ -87,44 +155,86 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "NETTO",
     "G20",
     "COCCINELLE",
-  ].map((p) => ({ pattern: p, category: "Groceries" })),
-  // Dining
-  ...[
+    "DAILY MONOP",
+    "BIO C BON",
+    "LA GRANDE EPICERIE",
+  ]),
+  ...contains("Dining Out", "DEBIT", [
     "UBER EATS",
-    "UBER *EATS",
     "DELIVEROO",
     "JUST EAT",
     "MCDONALD",
     "BURGER KING",
     "KFC",
-    "STARBUCKS",
-    "PAUL ",
     "RESTAURANT",
     "BRASSERIE",
-    "BOULANGERIE",
     "PIZZA",
+    "PIZZERIA",
+    "TRATTORIA",
     "SUSHI",
-    "CAFE ",
-    "COLUMBUS",
-    "FIVE GUYS",
+    "RAMEN",
+    "KEBAB",
+    "TACOS",
     "O TACOS",
+    "BURGER",
+    "KITCHEN",
+    "FIVE GUYS",
     "DOMINOS",
     "PRET A MANGER",
-    "BISTROT",
+    "BISTRO",
     "TRAITEUR",
     "CREPERIE",
-  ].map((p) => ({ pattern: p, category: "Dining Out" })),
-  // Transport
-  ...[
+    "POKE",
+    "BAGEL",
+    "FRICHTI",
+  ]),
+  {
+    pattern: String.raw`\b(BAR|BARS|PUB|PUBS|BIERE|BIERES|BEER|BEERS|BREWDOG|TAVERNE|TAVERN|COCKTAILS?|SPEAKEASY|GUINGUETTE|TERRASSE|ROOFTOP|LOUNGE|NIGHTCLUB|DISCOTHEQUE|BAR A VIN|BAR A BIERES)\b`,
+    category: "Bars & Nightlife",
+    direction: "DEBIT",
+    matchType: "REGEX",
+  },
+  ...contains("Coffee & Snacks", "DEBIT", [
+    "STARBUCKS",
+    "COLUMBUS",
+    "COFFEE",
+    "MAXICOFFEE",
+    "SELECTA",
+    "IVS FRANCE",
+    "NYX",
+    "LAVAZZA",
+    "CAFE",
+    "CAFETERIA",
+    "KB COFFEE",
+    "COUTUME",
+    "BOULANGERIE",
+    "PATISSERIE",
+    "BRIOCHE DOREE",
+    "MARIE BLACHERE",
+    "LA MIE CALINE",
+  ]),
+  ...contains("Canteen", "DEBIT", [
+    "CROUS",
+    "IZLY",
+    "SODEXO",
+    "ELIOR",
+    "EUREST",
+    "COMPASS GROUP",
+    "API RESTAURATION",
+    "CANTINE",
+    "TURBOSELF",
+    "RESTAURATION COLLECTIVE",
+  ]),
+  { pattern: String.raw`\bRIE\b`, category: "Canteen", direction: "DEBIT", matchType: "REGEX" },
+  ...contains("Transport", "DEBIT", [
     "UBER",
     "BOLT",
     "HEETCH",
     "G7",
     "RATP",
     "NAVIGO",
-    "SNCF CONNECT",
-    "TOTAL ENERGIES",
     "TOTALENERGIES",
+    "TOTAL ENERGIES",
     "ESSO",
     "SHELL",
     "AVIA",
@@ -140,9 +250,8 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "TCL",
     "RTM",
     "TISSEO",
-  ].map((p) => ({ pattern: p, category: "Transport", direction: "DEBIT" as const })),
-  // Travel
-  ...[
+  ]),
+  ...contains("Travel", "DEBIT", [
     "AIR FRANCE",
     "EASYJET",
     "RYANAIR",
@@ -159,9 +268,9 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "EUROSTAR",
     "LUFTHANSA",
     "KLM",
-  ].map((p) => ({ pattern: p, category: "Travel", direction: "DEBIT" as const })),
-  // Utilities
-  ...[
+    "FLIXBUS",
+  ]),
+  ...contains("Utilities", "DEBIT", [
     "EDF",
     "ENGIE",
     "TOTALENERGIES ELEC",
@@ -176,9 +285,16 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "RED BY SFR",
     "EKWATEUR",
     "ENERCOOP",
-  ].map((p) => ({ pattern: p, category: "Utilities", direction: "DEBIT" as const })),
-  // Subscriptions
-  ...[
+    "PRIXTEL",
+    "LEBARA",
+    "SYMA",
+    "NRJ MOBILE",
+    "CORIOLIS",
+    "LA POSTE MOBILE",
+    "YOUPRICE",
+    "AUCHAN TELECOM",
+  ]),
+  ...contains("Subscriptions", "DEBIT", [
     "NETFLIX",
     "SPOTIFY",
     "DISNEY PLUS",
@@ -188,9 +304,11 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "DEEZER",
     "APPLE.COM/BILL",
     "APPLE COM BILL",
+    "APPLE CORK",
     "ICLOUD",
     "GOOGLE STORAGE",
     "GOOGLE ONE",
+    "GOOGLE PLAY",
     "YOUTUBE PREMIUM",
     "AMAZON PRIME",
     "PRIME VIDEO",
@@ -212,9 +330,8 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "MAX.COM",
     "DAZN",
     "BEIN",
-  ].map((p) => ({ pattern: p, category: "Subscriptions", direction: "DEBIT" as const })),
-  // Shopping
-  ...[
+  ]),
+  ...contains("Shopping", "DEBIT", [
     "AMAZON",
     "AMZN",
     "FNAC",
@@ -238,61 +355,55 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "ACTION",
     "KIABI",
     "PRIMARK",
-  ].map((p) => ({ pattern: p, category: "Shopping", direction: "DEBIT" as const })),
-  // Health
-  ...["PHARMACIE", "PHARMA", "DOCTOLIB", "DENTISTE", "OPTIC", "LABORATOIRE", "MEDECIN", "HOPITAL", "CLINIQUE", "KINE"].map((p) => ({
-    pattern: p,
-    category: "Health",
-    direction: "DEBIT" as const,
-  })),
-  // Entertainment
-  ...["UGC", "PATHE", "GAUMONT", "MK2", "FNAC SPECTACLES", "TICKETMASTER", "STEAM", "EPIC GAMES", "SHOTGUN", "DICE.FM"].map((p) => ({
-    pattern: p,
-    category: "Entertainment",
-    direction: "DEBIT" as const,
-  })),
-  // Personal care
-  ...["BASIC FIT", "BASIC-FIT", "FITNESS PARK", "NEONESS", "CLUB MED GYM", "COIFF", "BARBER", "YVES ROCHER", "NOCIBE", "MARIONNAUD"].map((p) => ({
-    pattern: p,
-    category: "Personal Care",
-    direction: "DEBIT" as const,
-  })),
-  // Insurance
-  ...["ASSURANCE", "AXA", "MAIF", "MACIF", "MAAF", "MATMUT", "ALLIANZ", "GROUPAMA", "PACIFICA", "MUTUELLE", "GMF", "LUKO"].map((p) => ({
-    pattern: p,
+  ]),
+  ...contains("Health", "DEBIT", ["PHARMACIE", "PHARMA", "DOCTOLIB", "DENTISTE", "OPTIC", "LABORATOIRE", "MEDECIN", "HOPITAL", "CLINIQUE", "KINE"]),
+  ...contains("Entertainment", "DEBIT", [
+    "UGC",
+    "PATHE",
+    "GAUMONT",
+    "MK2",
+    "FNAC SPECTACLES",
+    "TICKETMASTER",
+    "STEAM",
+    "EPIC GAMES",
+    "SHOTGUN",
+    "DICE.FM",
+    "HIPPODROME",
+    "BILLETREDUC",
+  ]),
+  ...contains("Personal Care", "DEBIT", [
+    "BASIC FIT",
+    "BASIC-FIT",
+    "FITNESS PARK",
+    "NEONESS",
+    "CLUB MED GYM",
+    "COIFF",
+    "BARBER",
+    "YVES ROCHER",
+    "NOCIBE",
+    "MARIONNAUD",
+  ]),
+  // Generic insurance words anywhere; insurer brands only when it isn't a card payment, so a card
+  // payment at an employer that happens to be an insurer (e.g. its canteen) isn't filed as insurance.
+  ...contains("Insurance", "DEBIT", ["ASSURANCE", "MUTUELLE"]),
+  {
+    pattern: `${NOT_A_CARD_PAYMENT}.*\\b(AXA|MAIF|MACIF|MAAF|MATMUT|ALLIANZ|GROUPAMA|PACIFICA|GMF|LUKO|ALAN|GENERALI|SWISSLIFE|HISCOX|LEOCARE|HEYME|LMDE)\\b`,
     category: "Insurance",
-    direction: "DEBIT" as const,
-  })),
-  // Taxes
-  ...["DGFIP", "IMPOT", "TRESOR PUBLIC", "FINANCES PUBLIQUES", "URSSAF", "ANTS"].map((p) => ({ pattern: p, category: "Taxes", direction: "DEBIT" as const })),
-  // Fees
-  ...["COTISATION", "FRAIS", "COMMISSION", "AGIOS", "OFFRE GLOBULE", "FEE", "INTERETS DEBITEURS"].map((p) => ({
-    pattern: p,
-    category: "Fees & Charges",
-    direction: "DEBIT" as const,
-  })),
-  // Cash
-  ...["RETRAIT DAB", "RETRAIT GAB", "RETRAIT", "CASH WITHDRAWAL", "CASH AT", "ATM"].map((p) => ({ pattern: p, category: "Cash", direction: "DEBIT" as const })),
-  // Housing
-  ...["LOYER", "FONCIA", "NEXITY", "ORPI", "SYNDIC", "CITYA", "ECHEANCE PRET", "PRET IMMO"].map((p) => ({
-    pattern: p,
-    category: "Housing",
-    direction: "DEBIT" as const,
-  })),
-  // Pets
-  ...["VETERINAIRE", "VETO", "MAXI ZOO", "ANIMALIS", "TRUFFAUT"].map((p) => ({ pattern: p, category: "Pets", direction: "DEBIT" as const })),
-  // Gifts
-  ...["UNICEF", "CROIX ROUGE", "MSF", "RESTOS DU COEUR", "LEETCHI", "LYDIA CAGNOTTE"].map((p) => ({
-    pattern: p,
-    category: "Gifts & Donations",
-    direction: "DEBIT" as const,
-  })),
-  // Income
-  ...["SALAIRE", "PAYROLL", "SALARY", "REMUNERATION"].map((p) => ({ pattern: p, category: "Salary", direction: "CREDIT" as const })),
-  ...["REMBOURSEMENT", "REFUND", "AVOIR", "CPAM", "AMELI"].map((p) => ({ pattern: p, category: "Refunds", direction: "CREDIT" as const })),
-  ...["INTERETS", "INTEREST", "DIVIDEND", "COUPON"].map((p) => ({ pattern: p, category: "Investment Income", direction: "CREDIT" as const })),
-  // Transfers between own accounts
-  ...[
+    direction: "DEBIT",
+    matchType: "REGEX",
+  },
+  ...contains("Taxes", "DEBIT", ["DGFIP", "IMPOT", "TRESOR PUBLIC", "FINANCES PUBLIQUES", "URSSAF", "ANTS"]),
+  ...contains("Fees & Charges", "DEBIT", ["COTIS", "FRAIS", "COMMISSION", "AGIOS", "OFFRE GLOBULE", "OFFRE ESSENTIEL", "FEE", "INTERETS DEBITEURS"]),
+  ...contains("Cash", "DEBIT", ["RETRAIT DAB", "RETRAIT GAB", "RETRAIT", "CASH WITHDRAWAL", "CASH AT", "ATM"]),
+  ...contains("Housing", "DEBIT", ["LOYER", "FONCIA", "NEXITY", "ORPI", "SYNDIC", "CITYA", "ECHEANCE PRET", "PRET IMMO"]),
+  ...contains("Pets", "DEBIT", ["VETERINAIRE", "VETO", "MAXI ZOO", "ANIMALIS", "TRUFFAUT"]),
+  ...contains("Gifts & Donations", "DEBIT", ["UNICEF", "CROIX ROUGE", "MSF", "RESTOS DU COEUR", "LEETCHI", "LYDIA CAGNOTTE"]),
+  ...contains("Salary", "CREDIT", ["SALAIRE", "PAYROLL", "SALARY", "REMUNERATION"]),
+  // "PAIE0426"-style payroll references; \b keeps it away from "PAIEMENT".
+  { pattern: String.raw`PAIE\d{4}\b|\bPAIE\b`, category: "Salary", direction: "CREDIT", matchType: "REGEX" },
+  ...contains("Refunds", "CREDIT", ["REMBOURSEMENT", "REFUND", "AVOIR", "CPAM", "AMELI"]),
+  ...contains("Investment Income", "CREDIT", ["INTERETS", "INTEREST", "DIVIDEND", "COUPON"]),
+  ...contains(TRANSFER_CATEGORY, undefined, [
     "TOP-UP",
     "TOP UP",
     "TOPUP",
@@ -305,8 +416,9 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "APPLE PAY TOP",
     "POCKET",
     "VAULT",
-  ].map((p) => ({ pattern: p, category: TRANSFER_CATEGORY })),
-  ...[
+    "REVOLUT",
+  ]),
+  ...contains("Savings & Investments", undefined, [
     "LIVRET A",
     "LDDS",
     "ASSURANCE VIE",
@@ -321,7 +433,7 @@ export const SYSTEM_RULES: { pattern: string; category: string; direction?: "DEB
     "NALO",
     "SAVINGS",
     "EPARGNE",
-  ].map((p) => ({ pattern: p, category: "Savings & Investments" })),
+  ]),
 ];
 
 /** Default priority per source; learned corrections must beat everything else. */

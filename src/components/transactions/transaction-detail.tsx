@@ -106,7 +106,7 @@ export function TransactionDetail({
             }}
             rows={3}
             placeholder="Add a note…"
-            className="w-full resize-none rounded-xl bg-fill p-3 text-[13px] outline-none placeholder:text-subtle focus:ring-[3px] focus:ring-[color-mix(in_srgb,var(--accent)_25%,transparent)]"
+            className="w-full resize-none rounded-xl bg-fill p-3 text-[16px] outline-none placeholder:text-subtle focus:ring-[3px] focus:ring-[color-mix(in_srgb,var(--accent)_25%,transparent)] sm:text-[13px]"
           />
         </div>
       </div>

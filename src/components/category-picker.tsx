@@ -3,7 +3,8 @@
 import * as React from "react";
 import { Popover } from "radix-ui";
 import { Command } from "cmdk";
-import { Check, Sparkles, Wand2, Pencil, CircleAlert } from "lucide-react";
+import Link from "next/link";
+import { Check, Sparkles, Wand2, Pencil, CircleAlert, Plus, Shapes } from "lucide-react";
 import type { CategoryDTO } from "@/lib/services/queries";
 import { CategoryIcon } from "./category-icon";
 import { Switch } from "./ui/switch";
@@ -30,6 +31,7 @@ export function CategoryPicker({
   similarCount,
   merchantName,
   onSelect,
+  onCreate,
   open,
   onOpenChange,
   children,
@@ -40,11 +42,19 @@ export function CategoryPicker({
   similarCount: number;
   merchantName: string;
   onSelect: (categoryId: string, opts: { applyToSimilar: boolean }) => void;
+  /** Create a category from the search text and assign it. */
+  onCreate?: (name: string, opts: { applyToSimilar: boolean }) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
 }) {
   const [applyToSimilar, setApplyToSimilar] = React.useState(true);
+  const [query, setQuery] = React.useState("");
+  React.useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+  const typed = query.trim();
+  const canCreate = !!onCreate && typed.length > 0 && !categories.some((c) => c.name.toLowerCase() === typed.toLowerCase());
   // Show the kinds compatible with the money direction first.
   const groups: { label: string; kind: CategoryDTO["kind"] }[] =
     amountCents < 0
@@ -72,11 +82,30 @@ export function CategoryPicker({
           <Command loop className="flex flex-col">
             <Command.Input
               autoFocus
-              placeholder="Move to category…"
-              className="h-11 border-b border-line bg-transparent px-4 text-sm outline-none placeholder:text-subtle"
+              value={query}
+              onValueChange={setQuery}
+              placeholder="Move to or create a category…"
+              className="h-11 border-b border-line bg-transparent px-4 text-[16px] outline-none placeholder:text-subtle sm:text-sm"
             />
             <Command.List className="max-h-72 scrollbar-thin overflow-y-auto p-1.5">
-              <Command.Empty className="px-3 py-6 text-center text-sm text-muted">No category found.</Command.Empty>
+              {!canCreate && <Command.Empty className="px-3 py-6 text-center text-sm text-muted">No category found.</Command.Empty>}
+              {canCreate && (
+                <Command.Group forceMount>
+                  <Command.Item
+                    forceMount
+                    value={`__create__ ${typed}`}
+                    onSelect={() => onCreate!(typed, { applyToSimilar })}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-[13px] data-[selected=true]:bg-fill-strong"
+                  >
+                    <span className="flex size-6 items-center justify-center rounded-lg bg-accent/15 text-accent">
+                      <Plus className="size-3.5" strokeWidth={2.5} />
+                    </span>
+                    <span className="flex-1 truncate">
+                      Create <span className="font-semibold">“{typed}”</span>
+                    </span>
+                  </Command.Item>
+                </Command.Group>
+              )}
               {groups.map((g) => (
                 <Command.Group
                   key={g.kind}
@@ -110,6 +139,13 @@ export function CategoryPicker({
             </span>
             <Switch checked={applyToSimilar} onCheckedChange={setApplyToSimilar} />
           </label>
+          <Link
+            href="/categories"
+            onClick={() => onOpenChange(false)}
+            className="flex items-center gap-2 border-t border-line px-4 py-2.5 text-xs font-medium text-muted transition-colors hover:bg-fill hover:text-fg"
+          >
+            <Shapes className="size-3.5" /> Manage categories
+          </Link>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

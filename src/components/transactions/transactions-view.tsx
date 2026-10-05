@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, CircleAlert, CheckCheck, X } from "lucide-react";
+import { Search, CircleAlert, CheckCheck, X, Shapes } from "lucide-react";
 import type { CategoryDTO, TransactionDTO } from "@/lib/services/queries";
 import { formatMoney } from "@/lib/money";
 import { monthLabel } from "@/lib/dates";
 import { foldText } from "@/lib/text";
-import { confirmReviewAction, overrideCategoryAction } from "@/lib/actions";
+import { confirmReviewAction, overrideCategoryAction, quickCreateCategoryAction } from "@/lib/actions";
 import { cn } from "@/lib/utils";
 import { CategoryChip, CategoryPicker } from "../category-picker";
 import { Input, Kbd, Select } from "../ui/input";
@@ -20,7 +21,7 @@ const PAGE = 150;
 
 export function TransactionsView({
   initial,
-  categories,
+  categories: initialCategories,
   accounts,
 }: {
   initial: TransactionDTO[];
@@ -45,6 +46,8 @@ export function TransactionsView({
   const searchRef = React.useRef<HTMLInputElement>(null);
   const deferredQuery = React.useDeferredValue(query);
 
+  const [categories, setCategories] = React.useState(initialCategories);
+  React.useEffect(() => setCategories(initialCategories), [initialCategories]);
   const catById = React.useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const months = React.useMemo(() => [...new Set(txs.map((t) => t.date.slice(0, 7)))].sort().reverse(), [txs]);
   const reviewCount = React.useMemo(() => txs.filter((t) => t.needsReview).length, [txs]);
@@ -93,9 +96,9 @@ export function TransactionsView({
   );
 
   const recategorize = React.useCallback(
-    async (t: TransactionDTO, categoryId: string, applyToSimilar: boolean) => {
+    async (t: TransactionDTO, categoryId: string, applyToSimilar: boolean, created?: CategoryDTO) => {
       setPickerFor(null);
-      const c = catById.get(categoryId);
+      const c = created ?? catById.get(categoryId);
       if (!c) return;
       const snapshot = txs;
       // Optimistic: mirror the server's learning semantics locally.
@@ -121,6 +124,28 @@ export function TransactionsView({
       router.refresh();
     },
     [catById, router, toast, txs],
+  );
+
+  const createAndAssign = React.useCallback(
+    async (t: TransactionDTO, name: string, applyToSimilar: boolean) => {
+      setPickerFor(null);
+      const res = await quickCreateCategoryAction(name, t.amountCents < 0 ? "EXPENSE" : "INCOME");
+      if (!res.ok) {
+        toast({ tone: "error", title: "Couldn't create category", description: res.error });
+        return;
+      }
+      const created: CategoryDTO = {
+        ...res.data,
+        kind: res.data.kind as CategoryDTO["kind"],
+        isSystem: false,
+        description: null,
+        systemKey: null,
+        archived: false,
+      };
+      setCategories((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      await recategorize(t, created.id, applyToSimilar, created);
+    },
+    [recategorize, toast],
   );
 
   const confirm = React.useCallback(
@@ -185,11 +210,19 @@ export function TransactionsView({
         title="Transactions"
         subtitle={`${filtered.length.toLocaleString()} shown · ${formatMoney(totals.inC, "EUR", { decimals: false })} in · ${formatMoney(totals.outC, "EUR", { decimals: false })} out`}
         actions={
-          reviewOnly && filtered.some((t) => t.needsReview) ? (
-            <Button variant="primary" size="sm" onClick={() => confirm(filtered.filter((t) => t.needsReview).map((t) => t.id))}>
-              <CheckCheck /> Confirm all shown
-            </Button>
-          ) : null
+          <>
+            <Link
+              href="/categories"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-fill px-3 text-[13px] font-medium transition-colors hover:bg-fill-strong"
+            >
+              <Shapes className="size-4" /> Categories
+            </Link>
+            {reviewOnly && filtered.some((t) => t.needsReview) && (
+              <Button variant="primary" size="sm" onClick={() => confirm(filtered.filter((t) => t.needsReview).map((t) => t.id))}>
+                <CheckCheck /> Confirm all shown
+              </Button>
+            )}
+          </>
         }
       />
 
@@ -315,6 +348,7 @@ export function TransactionsView({
                       open={pickerFor === t.id}
                       onOpenChange={(o) => setPickerFor(o ? t.id : null)}
                       onSelect={(id, opts) => recategorize(t, id, opts.applyToSimilar)}
+                      onCreate={(name, opts) => createAndAssign(t, name, opts.applyToSimilar)}
                     >
                       <CategoryChip category={c} source={t.categorySource} needsReview={t.needsReview} aria-label={`Category: ${c?.name}. Change`} />
                     </CategoryPicker>

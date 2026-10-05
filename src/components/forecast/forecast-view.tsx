@@ -359,7 +359,7 @@ export function ForecastView({
                   <select
                     value={draft.month}
                     onChange={(e) => setDraft({ ...draft, month: e.target.value })}
-                    className="h-8 rounded-lg bg-fill px-2 text-xs outline-none"
+                    className="h-8 rounded-lg bg-fill px-2 text-[16px] outline-none sm:text-xs"
                     aria-label="Month offset"
                   >
                     {Array.from({ length: horizon }, (_, i) => i + 1).map((m) => (

@@ -4,14 +4,12 @@ import { prisma } from "../db";
 import { parseStatement, StatementParseError, type InstitutionId, type ParsedTransaction } from "../parsers";
 import { merchantDisplayName, merchantKey } from "../categorization/merchant";
 import { runPipeline } from "../categorization/pipeline";
-import { DEFAULT_CATEGORIES, PRIORITY } from "../categorization/defaults";
 import { categorizeWithAi, describeAiError } from "../ai/categorize";
 import { aiConfigured, describeAiFailure } from "../ai/client";
 import { extractStatementWithAi } from "../ai/extract-statement";
 import { foldText } from "../text";
-import { syncDefaults } from "./user";
+import { loadPipelineContext, persistAiRules } from "./categories";
 import { isoDay } from "../dates";
-import type { RuleLike } from "../categorization/rules";
 
 export interface ImportSummary {
   batchId: string;
@@ -94,12 +92,7 @@ export async function importStatement(userId: string, fileName: string, bytes: U
       .filter((r) => !existingSet.has(`${r.accountId}|${r.fingerprint}`));
     const rowsDuplicate = parsed.transactions.length - fresh.length;
 
-    await syncDefaults(userId);
-    const [rules, categories] = await Promise.all([
-      prisma.categorizationRule.findMany({ where: { userId, isActive: true } }),
-      prisma.category.findMany({ where: { userId } }),
-    ]);
-    const descriptions = new Map(DEFAULT_CATEGORIES.map((c) => [c.name, c.description]));
+    const ctx = await loadPipelineContext(userId);
     const bankLabel = parsed.institution === "REVOLUT" ? "Revolut" : "Crédit Agricole";
     const pipelineInput = fresh.map((r) => ({
       rawDescription: r.tx.rawDescription,
@@ -110,8 +103,7 @@ export async function importStatement(userId: string, fileName: string, bytes: U
     }));
     const useAi = aiConfigured();
     const result = await runPipeline(pipelineInput, {
-      rules: rules as RuleLike[],
-      categories: categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, description: descriptions.get(c.name) ?? c.name })),
+      ...ctx,
       ai: useAi ? categorizeWithAi : undefined,
       describeAiError,
     });
@@ -124,26 +116,7 @@ export async function importStatement(userId: string, fileName: string, bytes: U
 
     await prisma.$transaction(
       async (db) => {
-        // Persist confident AI decisions as rules so the same merchant is never sent to the model twice.
-        for (const r of result.aiRules) {
-          await db.categorizationRule.upsert({
-            where: {
-              userId_field_matchType_pattern_direction: { userId, field: "MERCHANT", matchType: "EXACT", pattern: r.merchantKey, direction: r.direction },
-            },
-            update: {}, // never overwrite an existing (possibly learned) rule
-            create: {
-              userId,
-              categoryId: r.categoryId,
-              field: "MERCHANT",
-              matchType: "EXACT",
-              pattern: r.merchantKey,
-              direction: r.direction,
-              source: "AI",
-              priority: PRIORITY.AI,
-              confidence: r.confidence,
-            },
-          });
-        }
+        await persistAiRules(userId, result.aiRules, db);
         for (const [ruleId, hits] of result.ruleHits) {
           await db.categorizationRule.update({ where: { id: ruleId }, data: { hitCount: { increment: hits } } });
         }

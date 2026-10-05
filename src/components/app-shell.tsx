@@ -21,6 +21,7 @@ import {
   Vault,
   CircleAlert,
   LogOut,
+  Shapes,
 } from "lucide-react";
 import { CopilotProvider, useCopilot } from "./copilot/copilot-provider";
 import { logoutAction } from "@/lib/auth-actions";
@@ -33,6 +34,7 @@ const NAV = [
   { href: "/transactions", label: "Transactions", icon: ListOrdered, key: "t" },
   { href: "/insights", label: "Insights", icon: Lightbulb, key: "i" },
   { href: "/forecast", label: "Forecast", icon: LineChart, key: "f" },
+  { href: "/categories", label: "Categories", icon: Shapes, key: "c" },
   { href: "/rules", label: "Rules", icon: Wand2, key: "r" },
   { href: "/import", label: "Import", icon: UploadCloud, key: "u" },
 ];
@@ -168,7 +170,7 @@ function Shell({ children, reviewCount, canSignOut }: { children: React.ReactNod
         </button>
       </header>
       <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-line pt-1.5 pb-[max(env(safe-area-inset-bottom),6px)] glass md:hidden">
-        {NAV.filter((n) => n.href !== "/rules").map((n) => {
+        {NAV.filter((n) => n.href !== "/rules" && n.href !== "/categories").map((n) => {
           const active = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
           return (
             <Link key={n.href} href={n.href} className={cn("flex flex-col items-center gap-0.5 px-2 text-[10px]", active ? "text-accent" : "text-subtle")}>
@@ -243,7 +245,7 @@ function CommandPalette({ open, onOpenChange, reviewCount }: { open: boolean; on
                 onValueChange={setQuery}
                 autoFocus
                 placeholder="Search pages and actions, or ask a question…"
-                className="h-14 flex-1 bg-transparent text-[15px] outline-none placeholder:text-subtle"
+                className="h-14 flex-1 bg-transparent text-[16px] outline-none placeholder:text-subtle sm:text-[15px]"
               />
             </div>
             <Command.List className="max-h-[50vh] scrollbar-thin overflow-y-auto p-2">

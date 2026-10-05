@@ -15,6 +15,8 @@ model User {
   email        String   @unique
   name         String?
   baseCurrency String   @default("EUR")
+  /// Version of the built-in categories/lexicon last applied to this user (see categorization/defaults.ts).
+  defaultsVersion Int    @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -69,14 +71,22 @@ model Category {
   /// Muted palette token, e.g. "sage", "slate". Resolved to colors in the UI.
   color     String
   icon      String
+  /// Tells the AI categorizer what belongs here (editable, e.g. "card top-ups for the Allianz canteen").
+  description String?
   /// System categories are seeded and cannot be deleted (only renamed / recolored).
   isSystem  Boolean      @default(false)
+  /// Stable identifier of a built-in category (its original name), so renaming never breaks
+  /// the built-in lexicon or the fallback categories. Null for user-created categories.
+  systemKey String?
+  /// Hidden from pickers. Built-in categories are archived instead of deleted, so upgrades don't recreate them.
+  archived  Boolean      @default(false)
   createdAt DateTime     @default(now())
 
   transactions Transaction[]
   rules        CategorizationRule[]
 
   @@unique([userId, name])
+  @@unique([userId, systemKey])
 }
 
 enum RuleMatchField {

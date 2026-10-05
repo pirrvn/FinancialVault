@@ -6,7 +6,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
   <input
     ref={ref}
     className={cn(
-      "h-9 w-full rounded-xl bg-fill px-3 text-sm transition-colors outline-none placeholder:text-subtle focus:bg-surface focus:ring-[3px] focus:ring-[color-mix(in_srgb,var(--accent)_25%,transparent)]",
+      "h-9 w-full rounded-xl bg-fill px-3 text-[16px] transition-colors outline-none placeholder:text-subtle focus:bg-surface focus:ring-[3px] focus:ring-[color-mix(in_srgb,var(--accent)_25%,transparent)] sm:text-sm",
       className,
     )}
     {...props}
@@ -18,7 +18,7 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
   <span className={cn("relative inline-flex max-w-[220px] min-w-0 shrink-0", className)}>
     <select
       ref={ref}
-      className="h-9 w-full cursor-pointer appearance-none truncate rounded-xl bg-fill pr-8 pl-3 text-sm transition-colors outline-none hover:bg-fill-strong focus:ring-[3px] focus:ring-[color-mix(in_srgb,var(--accent)_25%,transparent)]"
+      className="h-9 w-full cursor-pointer appearance-none truncate rounded-xl bg-fill pr-8 pl-3 text-[16px] transition-colors outline-none hover:bg-fill-strong focus:ring-[3px] focus:ring-[color-mix(in_srgb,var(--accent)_25%,transparent)] sm:text-sm"
       {...props}
     />
     <ChevronDown className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-subtle" strokeWidth={2.2} />
