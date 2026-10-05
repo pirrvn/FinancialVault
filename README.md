@@ -31,7 +31,13 @@ To try it without real statements, run `npm run samples`. It writes 12 months of
 | `npm run samples [YYYY-MM]` | Regenerate demo statements ending at the given month |
 | `npm run format` | Prettier, with the Tailwind class sorter |
 
-FinanceVault still works without an API key. Rules and the built-in lexicon categorize what they can, everything else gets a default category and is flagged for one-click review, and the Copilot shows a setup message.
+**AI is optional, and FinanceVault is designed to be used without it.** Statements (Revolut CSV, Crédit Agricole PDF) are read by deterministic parsers, never by AI. Without a key:
+
+- the built-in lexicon and everything you've taught it categorize what they can;
+- merchants it doesn't know wait on the **Review** screen, one card per merchant, with suggestions computed locally from your own history (similar merchants you already filed, amounts, "Le …" venues that look like bars, money to and from friends). One tap files every past and future transaction from that merchant;
+- the Copilot and AI buttons are hidden.
+
+Adding a `GEMINI_API_KEY` later turns on AI categorization for unknown merchants, the AI reader for unusual PDFs, and the Copilot.
 
 ---
 
@@ -48,6 +54,7 @@ src/
       transactions/          Ledger with inline categorization
       insights/              Subscriptions, concentration, savings opportunities
       forecast/              3/6/12-month projection + what-if simulator
+      review/                One-card-per-merchant triage with local (AI-free) suggestions
       categories/            Category management (custom categories, descriptions for the AI, hide/restore)
       rules/                 Rule management
       import/                Drag-and-drop ingestion + history
@@ -62,6 +69,7 @@ src/
       merchant.ts            Bank-noise stripping → stable merchant keys
       rules.ts               Rule compiler/matcher (priority, specificity, direction, account scope)
       pipeline.ts            The 3-tier pipeline (pure, dependency-injected AI)
+      suggest.ts             Local category suggestions for the Review screen (no AI)
       defaults.ts            Default categories + French/EU merchant lexicon
     ai/
       client.ts              Gemini client, model, error mapping
