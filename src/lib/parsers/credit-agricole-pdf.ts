@@ -57,6 +57,8 @@ const AMOUNT = /^\d{1,3}(?:[ .  ]\d{3})*,\d{2}$/;
 const FR_MONTHS = ["JANVIER", "FEVRIER", "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOUT", "SEPTEMBRE", "OCTOBRE", "NOVEMBRE", "DECEMBRE"];
 
 const center = (i: PdfTextItem) => i.x + i.width / 2;
+/** Statement content starts around x=14; anything left of this is printer margin. */
+const MARGIN_X = 12;
 
 /** Label text without the statement's tick-box glyphs ("¨", "þ") or other symbol-only items. */
 const labelText = (items: PdfTextItem[]) =>
@@ -73,7 +75,9 @@ function cleanAmountText(s: string): string {
 function groupLines(pages: PdfTextItem[][]): Line[] {
   const lines: Line[] = [];
   pages.forEach((items, page) => {
-    const sorted = items.filter((i) => i.str.trim()).sort((a, b) => b.y - a.y || a.x - b.x);
+    // Drop blanks and the mailing/sorting codes printed in the far-left margin ("001303"): sitting on the
+    // same baseline as an operation, they would hide its leading date.
+    const sorted = items.filter((i) => i.str.trim() && !(i.x < MARGIN_X && /^\d+$/.test(i.str.trim()))).sort((a, b) => b.y - a.y || a.x - b.x);
     let current: PdfTextItem[] = [];
     let currentY = Number.NaN;
     const flush = () => {

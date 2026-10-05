@@ -160,6 +160,8 @@ export async function buildModernCaStatementPdf(opts: {
       y -= 16;
     }
     ops.forEach((op, i) => {
+      // Printer sorting code in the left margin, on the same baseline as the page's first operation.
+      if (i === 0 && p > 0) page.drawText("001303", { x: 6, y: y + 1, size: 5, font });
       page.drawText(op.date, { x: 19, y, size, font });
       page.drawText(op.valeur, { x: 50, y, size, font });
       page.drawText(op.type, { x: 79, y, size, font });
