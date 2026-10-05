@@ -32,10 +32,10 @@ describe("dates", () => {
   });
 });
 
-describe("Revolut parser", () => {
+describe("Revolut parser", async () => {
   const bytes = fixture("revolut.csv");
   it("detects the format", () => expect(detectInstitution(decodeStatement(bytes))).toBe("REVOLUT"));
-  const result = parseStatement(bytes, "account-statement.csv");
+  const result = await parseStatement(bytes, "account-statement.csv");
 
   it("skips pending and reverted rows", () => {
     expect(result.transactions.map((t) => t.rawDescription)).not.toContain("Pending Thing");
@@ -62,11 +62,11 @@ describe("Revolut parser", () => {
   });
 });
 
-describe("Crédit Agricole parser", () => {
+describe("Crédit Agricole parser", async () => {
   const bytes = fixture("credit-agricole.csv");
   it("decodes Windows-1252", () => expect(decodeStatement(bytes)).toContain("Libellé"));
   it("detects the format", () => expect(detectInstitution(decodeStatement(bytes))).toBe("CREDIT_AGRICOLE"));
-  const result = parseStatement(bytes, "CA20240305.csv");
+  const result = await parseStatement(bytes, "CA20240305.csv");
 
   it("parses debit/credit columns with French amounts", () => {
     expect(result.transactions).toHaveLength(8);

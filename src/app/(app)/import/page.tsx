@@ -30,8 +30,8 @@ export default async function ImportPage() {
               <li>
                 <span className="font-medium text-fg">2 · AI.</span>{" "}
                 {ai
-                  ? "Unknown merchants are sent to Claude, one request per batch of merchants. Confident answers are saved as rules."
-                  : "Not configured. Set ANTHROPIC_API_KEY to enable AI inference for unknown merchants."}
+                  ? "Unknown merchants are sent to Gemini, one request per batch of merchants. Confident answers are saved as rules."
+                  : "Not configured. Set GEMINI_API_KEY to enable AI inference for unknown merchants."}
               </li>
               <li>
                 <span className="font-medium text-fg">3 · You.</span> Anything uncertain gets a sensible default and is flagged. Fix it in one click and
@@ -46,7 +46,8 @@ export default async function ImportPage() {
                 <span className="font-medium text-fg">Revolut:</span> Account → Statement → Excel/CSV → pick the month.
               </li>
               <li>
-                <span className="font-medium text-fg">Crédit Agricole:</span> Mes comptes → Télécharger → format CSV.
+                <span className="font-medium text-fg">Crédit Agricole:</span> Mes documents → e-relevés → download the PDF statement (or export operations as
+                CSV if available).
               </li>
             </ul>
           </Card>

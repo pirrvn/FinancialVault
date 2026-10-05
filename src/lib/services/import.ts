@@ -6,7 +6,8 @@ import { merchantDisplayName, merchantKey } from "../categorization/merchant";
 import { runPipeline } from "../categorization/pipeline";
 import { DEFAULT_CATEGORIES, PRIORITY } from "../categorization/defaults";
 import { categorizeWithAi, describeAiError } from "../ai/categorize";
-import { aiConfigured } from "../ai/client";
+import { aiConfigured, describeAiFailure } from "../ai/client";
+import { extractStatementWithAi } from "../ai/extract-statement";
 import { foldText } from "../text";
 import { syncDefaults } from "./user";
 import { isoDay } from "../dates";
@@ -46,7 +47,11 @@ export function fingerprintRows(rows: ParsedTransaction[]): string[] {
 export async function importStatement(userId: string, fileName: string, bytes: Uint8Array, institutionHint?: InstitutionId | null): Promise<ImportSummary> {
   let parsed;
   try {
-    parsed = parseStatement(bytes, fileName, institutionHint);
+    parsed = await parseStatement(bytes, fileName, institutionHint, {
+      available: aiConfigured(),
+      extract: extractStatementWithAi,
+      describeError: describeAiFailure,
+    });
   } catch (err) {
     if (err instanceof StatementParseError) throw err;
     throw new StatementParseError(`Failed to read "${fileName}": ${(err as Error).message}`);
@@ -113,7 +118,7 @@ export async function importStatement(userId: string, fileName: string, bytes: U
     const warnings = [...parsed.warnings, ...result.warnings];
     if (!useAi && result.stats.byFallback > 0) {
       warnings.push(
-        `${result.stats.byFallback} transaction(s) matched no rule and AI is not configured (set ANTHROPIC_API_KEY); they were given a default category and flagged for review.`,
+        `${result.stats.byFallback} transaction(s) matched no rule and AI is not configured (set GEMINI_API_KEY); they were given a default category and flagged for review.`,
       );
     }
 
