@@ -1,0 +1,221 @@
+// FinanceVault data model.
+// Money is stored as integer minor units (cents) to avoid floating point drift.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  baseCurrency String   @default("EUR")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts     Account[]
+  categories   Category[]
+  rules        CategorizationRule[]
+  transactions Transaction[]
+  imports      ImportBatch[]
+}
+
+enum Institution {
+  REVOLUT
+  CREDIT_AGRICOLE
+  OTHER
+}
+
+model Account {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  institution  Institution
+  /// Bank-side identifier used to route statement rows (e.g. "Current:EUR" for Revolut).
+  externalRef  String
+  currency     String      @default("EUR")
+  /// Last balance reported by a statement, in cents.
+  balanceCents Int?
+  balanceAsOf  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  transactions Transaction[]
+  imports      ImportBatch[]
+  rules        CategorizationRule[]
+
+  @@unique([userId, institution, externalRef])
+}
+
+enum CategoryKind {
+  EXPENSE
+  INCOME
+  /// Movements between own accounts / savings. Excluded from spend & income analytics.
+  TRANSFER
+}
+
+model Category {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  kind      CategoryKind
+  /// Muted palette token, e.g. "sage", "slate". Resolved to colors in the UI.
+  color     String
+  icon      String
+  /// System categories are seeded and cannot be deleted (only renamed / recolored).
+  isSystem  Boolean      @default(false)
+  createdAt DateTime     @default(now())
+
+  transactions Transaction[]
+  rules        CategorizationRule[]
+
+  @@unique([userId, name])
+}
+
+enum RuleMatchField {
+  /// The normalized merchant key (see lib/categorization/merchant.ts).
+  MERCHANT
+  /// The raw, accent-folded, upper-cased bank description.
+  DESCRIPTION
+}
+
+enum RuleMatchType {
+  CONTAINS
+  STARTS_WITH
+  EXACT
+  REGEX
+}
+
+enum RuleSource {
+  /// Created explicitly by the user in the Rules screen.
+  USER
+  /// Created automatically when the user manually re-categorized a transaction.
+  LEARNED
+  /// Persisted from an AI categorization so the same merchant is never sent twice.
+  AI
+  /// Built-in keyword lexicon seeded for every user.
+  SYSTEM
+}
+
+enum AmountDirection {
+  ANY
+  DEBIT
+  CREDIT
+}
+
+model CategorizationRule {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  field      RuleMatchField  @default(DESCRIPTION)
+  matchType  RuleMatchType   @default(CONTAINS)
+  /// Pattern compared against the normalized (upper-case, accent-free) field value.
+  pattern    String
+  direction  AmountDirection @default(ANY)
+  /// Optional: only apply to one account.
+  accountId  String?
+  account    Account?        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  source     RuleSource      @default(USER)
+  /// Higher wins. Defaults per source: LEARNED 1000, USER 500, AI 200, SYSTEM 100.
+  priority   Int             @default(500)
+  /// AI confidence for AI-sourced rules, 0..1.
+  confidence Float?
+  hitCount   Int             @default(0)
+  isActive   Boolean         @default(true)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  transactions Transaction[]
+
+  @@unique([userId, field, matchType, pattern, direction])
+  @@index([userId, isActive, priority])
+}
+
+enum CategorySource {
+  RULE
+  AI
+  MANUAL
+  /// Deterministic last-resort assignment; always flagged for review.
+  FALLBACK
+}
+
+model Transaction {
+  id             String         @id @default(cuid())
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId      String
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importBatchId  String?
+  importBatch    ImportBatch?   @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  /// Booking date (UTC midnight of the bank's calendar day).
+  date           DateTime       @db.Date
+  valueDate      DateTime?      @db.Date
+  /// Signed amount in cents: negative = money out.
+  amountCents    Int
+  currency       String
+  rawDescription String
+  /// Normalized merchant key used for rules, learning and subscription detection.
+  merchantKey    String
+  /// Human-friendly merchant label for display.
+  merchantName   String
+  bankType       String?
+
+  categoryId     String
+  category       Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categorySource CategorySource
+  ruleId         String?
+  rule           CategorizationRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  confidence     Float?
+  needsReview    Boolean        @default(false)
+  note           String?
+
+  /// Stable hash for idempotent re-imports of overlapping statements.
+  fingerprint    String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([accountId, fingerprint])
+  @@index([userId, date])
+  @@index([userId, merchantKey])
+  @@index([userId, categoryId])
+  @@index([userId, needsReview])
+}
+
+enum ImportStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model ImportBatch {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId     String?
+  account       Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  fileName      String
+  institution   Institution
+  status        ImportStatus @default(PROCESSING)
+  rowsParsed    Int          @default(0)
+  rowsImported  Int          @default(0)
+  rowsDuplicate Int          @default(0)
+  rowsSkipped   Int          @default(0)
+  byRule        Int          @default(0)
+  byAi          Int          @default(0)
+  byFallback    Int          @default(0)
+  warnings      String[]
+  error         String?
+  createdAt     DateTime     @default(now())
+
+  transactions Transaction[]
+}
