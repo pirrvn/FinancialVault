@@ -42,6 +42,36 @@ export function fingerprintRows(rows: ParsedTransaction[]): string[] {
   });
 }
 
+/**
+ * Second-chance de-duplication. A newer parser can read the same statement line a little differently
+ * (e.g. it now joins a wrapped "SCOR/… Core" reference to "Prlv Prixtel"), which changes the fingerprint.
+ * A row is still the same operation when an existing row on that account has the same day and amount,
+ * and one description extends the other. Each existing row absorbs at most one new row.
+ */
+export async function dropRereadDuplicates<T extends { tx: ParsedTransaction; accountId: string }>(rows: T[], alreadyMatched: Set<string>): Promise<T[]> {
+  if (!rows.length) return rows;
+  const near = await prisma.transaction.findMany({
+    where: { OR: rows.map((r) => ({ accountId: r.accountId, date: r.tx.date, amountCents: r.tx.amountCents })) },
+    select: { id: true, accountId: true, date: true, amountCents: true, rawDescription: true },
+  });
+  const used = new Set(alreadyMatched);
+  const squash = (t: string) => foldText(t).replace(/[^A-Z0-9]/g, "");
+  return rows.filter((r) => {
+    const mine = squash(r.tx.rawDescription);
+    const twin = near.find(
+      (e) =>
+        !used.has(e.id) &&
+        e.accountId === r.accountId &&
+        e.amountCents === r.tx.amountCents &&
+        e.date.getTime() === r.tx.date.getTime() &&
+        (mine.startsWith(squash(e.rawDescription)) || squash(e.rawDescription).startsWith(mine)),
+    );
+    if (!twin) return true;
+    used.add(twin.id);
+    return false;
+  });
+}
+
 export async function importStatement(userId: string, fileName: string, bytes: Uint8Array, institutionHint?: InstitutionId | null): Promise<ImportSummary> {
   let parsed;
   try {
@@ -84,12 +114,13 @@ export async function importStatement(userId: string, fileName: string, bytes: U
     const accountIds = [...accountByRef.values()].map((a) => a.id);
     const existing = await prisma.transaction.findMany({
       where: { accountId: { in: accountIds }, fingerprint: { in: fingerprints } },
-      select: { accountId: true, fingerprint: true },
+      select: { id: true, accountId: true, fingerprint: true },
     });
     const existingSet = new Set(existing.map((e) => `${e.accountId}|${e.fingerprint}`));
-    const fresh = parsed.transactions
+    const candidates = parsed.transactions
       .map((tx, i) => ({ tx, fingerprint: fingerprints[i], accountId: accountByRef.get(tx.accountRef)!.id }))
       .filter((r) => !existingSet.has(`${r.accountId}|${r.fingerprint}`));
+    const fresh = await dropRereadDuplicates(candidates, new Set(existing.map((e) => e.id)));
     const rowsDuplicate = parsed.transactions.length - fresh.length;
 
     const ctx = await loadPipelineContext(userId);

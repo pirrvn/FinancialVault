@@ -46,11 +46,14 @@ export function CategoryEditor({
   category,
   categories,
   onSaved,
+  defaultKind = "EXPENSE",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** null = create */
   category: CategoryWithStats | null;
+  /** Type preselected when creating (the section "Add a category" was clicked in). */
+  defaultKind?: Kind;
   categories: CategoryWithStats[];
   onSaved: () => void;
 }) {
@@ -67,13 +70,13 @@ export function CategoryEditor({
   React.useEffect(() => {
     if (!open) return;
     setName(category?.name ?? "");
-    setKind(category?.kind ?? "EXPENSE");
+    setKind(category?.kind ?? defaultKind);
     setDescription(category?.description ?? "");
     setColor(category?.color ?? PALETTE_KEYS.find((k) => !categories.some((c) => c.color === k)) ?? PALETTE_KEYS[0]);
     setIcon(category?.icon ?? "Tag");
     setDeleting(false);
     setTarget("");
-  }, [open, category, categories]);
+  }, [open, category, categories, defaultKind]);
 
   const isProtected = !!category?.isProtected;
   const kindLocked = !!category && (!!category.systemKey || category.transactionCount > 0);
@@ -134,8 +137,15 @@ export function CategoryEditor({
             </div>
           </div>
 
-          <Field label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Bars & Nightlife" maxLength={40} autoFocus={!category} />
+          <Field label="Name" htmlFor="category-name">
+            <Input
+              id="category-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Bars & Nightlife"
+              maxLength={40}
+              autoFocus={!category}
+            />
           </Field>
 
           <Field
@@ -148,16 +158,16 @@ export function CategoryEditor({
                 : KIND_HINT[kind]
             }
           >
-            <div className={cn(kindLocked && "pointer-events-none opacity-50")}>
-              <Segmented value={kind} onChange={setKind} options={KIND_OPTIONS} />
-            </div>
+            <Segmented value={kind} onChange={setKind} options={KIND_OPTIONS} disabled={kindLocked} aria-label="Type" />
           </Field>
 
           <Field
             label="What goes here?"
+            htmlFor="category-description"
             hint="Optional. If you turn on AI one day, Gemini reads this to file new merchants, so be specific: places, brands, habits."
           >
             <textarea
+              id="category-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
@@ -168,7 +178,7 @@ export function CategoryEditor({
           </Field>
 
           <Field label="Color">
-            <div className="flex flex-wrap gap-2">
+            <div role="group" aria-label="Color" className="flex flex-wrap gap-2">
               {PALETTE_KEYS.map((k) => (
                 <button
                   key={k}
@@ -189,7 +199,7 @@ export function CategoryEditor({
           </Field>
 
           <Field label="Icon">
-            <div className="grid grid-cols-7 gap-1.5 sm:grid-cols-8">
+            <div role="group" aria-label="Icon" className="grid grid-cols-7 gap-1.5 sm:grid-cols-8">
               {Object.keys(ICONS).map((k) => {
                 const I = ICONS[k];
                 return (
@@ -223,7 +233,6 @@ export function CategoryEditor({
                     {needsTarget
                       ? `${category.transactionCount} transaction${category.transactionCount === 1 ? "" : "s"} and ${category.ruleCount} rule${category.ruleCount === 1 ? "" : "s"} will move to:`
                       : "Nothing uses this category yet."}
-                    {hides && <span className="text-muted"> Built-in categories are hidden, and you can restore them later.</span>}
                   </p>
                   {needsTarget && (
                     <Select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Move to" className="w-full max-w-none">
@@ -235,6 +244,7 @@ export function CategoryEditor({
                       ))}
                     </Select>
                   )}
+                  {hides && <p className="text-muted">Built-in categories are hidden, and you can restore them later.</p>}
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -271,10 +281,13 @@ export function CategoryEditor({
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: React.ReactNode }) {
+  const Label = htmlFor ? "label" : "p";
   return (
     <div>
-      <p className="mb-2 text-[12px] font-medium tracking-wide text-muted uppercase">{label}</p>
+      <Label htmlFor={htmlFor} className="mb-2 block text-[12px] font-medium tracking-wide text-muted uppercase">
+        {label}
+      </Label>
       {children}
       {hint && <p className="mt-1.5 text-[12px] text-subtle">{hint}</p>}
     </div>

@@ -1,4 +1,4 @@
-import { compileRules, matchRule, type MatchableTransaction, type RuleLike } from "./rules";
+import { compileRules, kindFits, matchRule, type MatchableTransaction, type RuleLike } from "./rules";
 import { FALLBACK_EXPENSE, FALLBACK_INCOME, type Kind } from "./defaults";
 import type { AiCategorizationInput, AiCategorizationResult, AiCategoryOption } from "../ai/categorize";
 
@@ -75,10 +75,8 @@ export async function runPipeline(transactions: PipelineTransaction[], opts: Pip
 
   // Tier 1 — rules
   transactions.forEach((tx, i) => {
-    const rule = matchRule(compiled, tx);
+    const rule = matchRule(compiled, tx, (r) => kindFits(byId.get(r.categoryId)?.kind, tx.amountCents));
     if (!rule) return;
-    const category = byId.get(rule.categoryId);
-    if (!category || !kindAllowed(category.kind, tx.amountCents)) return;
     const confidence = rule.source === "AI" ? (rule.confidence ?? 0.8) : 1;
     decisions[i] = { categoryId: rule.categoryId, source: "RULE", ruleId: rule.id, confidence, needsReview: confidence < reviewThreshold };
     ruleHits.set(rule.id, (ruleHits.get(rule.id) ?? 0) + 1);

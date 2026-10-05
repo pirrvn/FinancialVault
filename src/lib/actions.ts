@@ -102,17 +102,20 @@ export async function updateRuleAction(id: string, patch: { isActive?: boolean; 
   const data = z
     .object({ isActive: z.boolean().optional(), categoryId: z.string().optional(), priority: z.number().int().min(0).max(5000).optional() })
     .parse(patch);
-  if (data.categoryId && !(await prisma.category.findFirst({ where: { id: data.categoryId, userId: user.id } })))
+  if (data.categoryId && !(await prisma.category.findFirst({ where: { id: data.categoryId, userId: user.id, archived: false } })))
     return { ok: false, error: "Unknown category" };
-  const res = await prisma.categorizationRule.updateMany({ where: { id, userId: user.id }, data });
-  if (!res.count) return { ok: false, error: "Rule not found" };
+  const rule = await prisma.categorizationRule.findFirst({ where: { id, userId: user.id } });
+  if (!rule) return { ok: false, error: "Rule not found" };
+  // An edited built-in or AI rule becomes yours: defaults upgrades and "Re-categorize with AI" leave it alone.
+  const source = rule.source === "SYSTEM" || rule.source === "AI" ? "USER" : rule.source;
+  await prisma.categorizationRule.update({ where: { id }, data: { ...data, source } });
   revalidateAll();
   return { ok: true, data: undefined };
 }
 
 export async function deleteRuleAction(id: string): Promise<ActionResult> {
   const user = await getCurrentUser();
-  // Built-in rules are re-synced on import, so they're disabled instead of deleted.
+  // Built-in rules come back with the next defaults upgrade, so they're switched off instead of deleted.
   const res = await prisma.categorizationRule.deleteMany({ where: { id, userId: user.id, source: { not: "SYSTEM" } } });
   if (!res.count) return { ok: false, error: "Rule not found" };
   revalidateAll();
@@ -127,11 +130,11 @@ export async function reapplyRulesAction(): Promise<ActionResult<{ changed: numb
 }
 
 const CategoryFields = {
-  name: z.string().trim().min(1, "Give it a name").max(40),
+  name: z.string().trim().min(1, "Give it a name").max(40, "Keep the name under 40 characters"),
   kind: z.enum(["EXPENSE", "INCOME", "TRANSFER"]),
   color: z.string().min(1).max(20),
   icon: z.string().min(1).max(40),
-  description: z.string().trim().max(300).nullable().optional(),
+  description: z.string().trim().max(300, "Keep the description under 300 characters").nullable().optional(),
 };
 const CategorySchema = z.object(CategoryFields);
 

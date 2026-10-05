@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader } from "../app-shell";
 import { CategoryIcon } from "../category-icon";
 import { Kbd } from "../ui/input";
+import { Segmented } from "../ui/segmented";
 import { useToast } from "../ui/toast";
 
 const fmtDate = (d: string) => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -48,10 +49,16 @@ export function ReviewView({
   const suggested = group ? group.suggestions.slice(0, 3) : [];
   const others = compatible.filter((c) => !suggested.some((s) => s.categoryId === c.id)).sort((a, b) => a.name.localeCompare(b.name));
 
+  // New categories default to the money direction's kind, or to "transfer" when it's filed as one now.
+  const directionKind: CategoryDTO["kind"] = group?.direction === "DEBIT" ? "EXPENSE" : "INCOME";
+  const [kindChoice, setKindChoice] = React.useState<CategoryDTO["kind"] | null>(null);
+  const newKind = kindChoice ?? (group && catById.get(group.currentCategoryId)?.kind === "TRANSFER" ? "TRANSFER" : directionKind);
+
   const advance = React.useCallback(() => {
     setQueue((q) => q.slice(1));
     setDone((d) => d + 1);
     setNewName("");
+    setKindChoice(null);
   }, []);
 
   const choose = React.useCallback(
@@ -79,7 +86,7 @@ export function ReviewView({
     const name = newName.trim();
     if (!group || !name) return;
     setBusy(true);
-    const res = await quickCreateCategoryAction(name, group.direction === "DEBIT" ? "EXPENSE" : "INCOME");
+    const res = await quickCreateCategoryAction(name, newKind);
     setBusy(false);
     if (!res.ok) {
       toast({ tone: "error", title: "Couldn't create category", description: res.error });
@@ -222,7 +229,7 @@ export function ReviewView({
             ))}
           </div>
           <form
-            className="mt-3 flex items-center gap-2"
+            className="mt-3 flex flex-wrap items-center gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               void create();
@@ -236,6 +243,18 @@ export function ReviewView({
               aria-label="New category name"
               className="h-9 min-w-0 flex-1 rounded-xl bg-fill px-3 text-[16px] outline-none placeholder:text-subtle focus:ring-[3px] focus:ring-[color-mix(in_srgb,var(--accent)_25%,transparent)] sm:text-sm"
             />
+            {newName.trim() && (
+              <Segmented
+                size="sm"
+                aria-label="Type of the new category"
+                value={newKind}
+                onChange={setKindChoice}
+                options={[
+                  { value: directionKind, label: directionKind === "EXPENSE" ? "Expense" : "Income" },
+                  { value: "TRANSFER" as const, label: "Transfer" },
+                ]}
+              />
+            )}
             <button
               type="submit"
               disabled={busy || !newName.trim()}

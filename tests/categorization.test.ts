@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { compileRules, matchRule, type RuleLike } from "@/lib/categorization/rules";
 import { runPipeline, type PipelineCategory } from "@/lib/categorization/pipeline";
 import { DEFAULT_CATEGORIES, PRIORITY, SYSTEM_RULES } from "@/lib/categorization/defaults";
-import { merchantKey } from "@/lib/categorization/merchant";
+import { merchantDisplayName, merchantKey } from "@/lib/categorization/merchant";
+import { planRekey, type RekeyRule } from "@/lib/categorization/rekey";
 
 const categories: PipelineCategory[] = DEFAULT_CATEGORIES.map((c) => ({
   id: `cat-${c.name}`,
@@ -178,5 +179,71 @@ describe("pipeline", () => {
     const out = await runPipeline([tx("CHEZ MOMO", -2300)], { rules: [], categories, ai, describeAiError: () => "AI down" });
     expect(out.decisions[0].source).toBe("FALLBACK");
     expect(out.warnings).toEqual(["AI down"]);
+  });
+});
+
+describe("merchant re-keying after a normalizer upgrade", () => {
+  const at = new Date("2026-01-01");
+  const rule = (id: string, pattern: string, source: RekeyRule["source"], direction: RekeyRule["direction"] = "DEBIT"): RekeyRule => ({
+    id,
+    pattern,
+    direction,
+    source,
+    priority: PRIORITY[source],
+    updatedAt: at,
+  });
+  const tx = (id: string, raw: string, oldKey: string, amountCents = -1200) => ({
+    id,
+    rawDescription: raw,
+    merchantKey: oldKey,
+    merchantName: oldKey,
+    amountCents,
+  });
+
+  it("moves a learned rule to the new key of its merchant", () => {
+    const plan = planRekey([tx("t1", "CARTE X1234 12/04 G20 PARIS 12/04", "CARTE PARIS")], [rule("r1", "CARTE PARIS", "LEARNED")]);
+    const newKey = merchantKey("CARTE X1234 12/04 G20 PARIS 12/04");
+    expect(newKey).not.toBe("CARTE PARIS");
+    expect(plan.transactions).toEqual([expect.objectContaining({ id: "t1", merchantKey: newKey })]);
+    expect(plan.updateRules).toEqual([{ id: "r1", pattern: newKey }]);
+    expect(plan.deleteRules).toEqual([]);
+  });
+
+  it("copies the rule when one old key splits into several merchants", () => {
+    const plan = planRekey(
+      [tx("t1", "CARTE X1234 12/04 G20 PARIS 12/04", "CARTE PARIS"), tx("t2", "CARTE X1234 13/04 FRANPRIX PARIS 13/04", "CARTE PARIS")],
+      [rule("r1", "CARTE PARIS", "LEARNED")],
+    );
+    expect(plan.updateRules).toHaveLength(1);
+    expect(plan.copyRules).toHaveLength(1);
+    expect(new Set([plan.updateRules[0].pattern, plan.copyRules[0].pattern])).toEqual(
+      new Set([merchantKey("CARTE X1234 12/04 G20 PARIS 12/04"), merchantKey("CARTE X1234 13/04 FRANPRIX PARIS 13/04")]),
+    );
+  });
+
+  it("keeps the stronger rule when two land on the same key", () => {
+    const key = merchantKey("PRLV SEPA PRIXTEL");
+    const plan = planRekey(
+      [tx("t1", "PRLV SEPA PRIXTEL", "PRIXTEL SCOR"), tx("t2", "PRLV SEPA PRIXTEL", key)],
+      [rule("ai", key, "AI"), rule("learned", "PRIXTEL SCOR", "LEARNED")],
+    );
+    expect(plan.deleteRules).toEqual(["ai"]);
+    expect(plan.updateRules).toEqual([{ id: "learned", pattern: key }]);
+  });
+
+  it("is a no-op once keys are current, and leaves rules without evidence alone", () => {
+    const raw = "CARTE X1234 12/04 G20 PARIS 12/04";
+    const key = merchantKey(raw);
+    const current = { id: "t1", rawDescription: raw, merchantKey: key, merchantName: merchantDisplayName(key, raw), amountCents: -500 };
+    const plan = planRekey([current], [rule("r1", key, "LEARNED"), rule("r2", "GONE MERCHANT", "USER")]);
+    expect(plan).toEqual({ transactions: [], updateRules: [], copyRules: [], deleteRules: [] });
+  });
+
+  it("only follows transactions in the rule's direction", () => {
+    const plan = planRekey(
+      [tx("t1", "VIR INST DE MME JEANNE DUPONT", "JEANNE", 2000)],
+      [rule("r1", "JEANNE", "LEARNED", "DEBIT"), rule("r2", "JEANNE", "LEARNED", "CREDIT")],
+    );
+    expect(plan.updateRules.map((r) => r.id)).toEqual(["r2"]);
   });
 });

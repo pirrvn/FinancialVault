@@ -39,7 +39,8 @@ const PREFIXES: RegExp[] = [
 
 const NOISE: RegExp[] = [
   /\b(REF|REFERENCE|ID|NUM|DATE|LIB)\s*[:.]\s*\S+/g, // "REF: XYZ123" style fields
-  /\b(MOTIF|MDT|RUM|ICS|ECH|ID EMETTEUR|EMETTEUR)\b.*$/g, // SEPA mandate / remittance / due-date blocks run to the end
+  /\b(SCOR|MOTIF|MDT|RUM|ICS|ECH|ID EMETTEUR|EMETTEUR)\b.*$/g, // SEPA creditor reference / mandate / remittance / due-date blocks run to the end
+  /\b(JANV?|JANVIER|FEVR?|FEVRIER|FEB|MARS?|AVR|AVRIL|APR|MAI|MAY|JUIN?|JUL|JUIL|JUILLET|AOUT?|AUG|SEPT?|SEPTEMBRE|OCT|OCTOBRE|NOV|NOVEMBRE|DEC|DECEMBRE) ?20\d{2}\b/g, // billing month ("JAN 2026")
   /\/(MOTIF|REF|ID|DE|A|LIB)\b.*$/g, // trailing structured SEPA blocks
   /\b(CARTE )?X\d{4}\b/g, // masked card numbers
   /\b\d{2}\/\d{2}(\/\d{2,4})?\b/g, // dates
@@ -54,16 +55,58 @@ const NOISE: RegExp[] = [
 ];
 
 /** Strip bank noise and return the canonical merchant key (upper-case, accent-free, <= 4 tokens). */
+const MONTHS = new Set([
+  "JAN",
+  "JANV",
+  "JANVIER",
+  "FEV",
+  "FEVR",
+  "FEVRIER",
+  "FEB",
+  "MAR",
+  "MARS",
+  "AVR",
+  "AVRIL",
+  "APR",
+  "MAI",
+  "MAY",
+  "JUN",
+  "JUIN",
+  "JUL",
+  "JUIL",
+  "JUILLET",
+  "AOU",
+  "AOUT",
+  "AUG",
+  "SEP",
+  "SEPT",
+  "SEPTEMBRE",
+  "OCT",
+  "OCTOBRE",
+  "NOV",
+  "NOVEMBRE",
+  "DEC",
+  "DECEMBRE",
+]);
+
+/** Money to or from a person: keep their initials ("BENJAMIN F" and "BENJAMIN L" are different people). */
+const PERSON_TRANSFER = /\b(WERO|LYDIA|PAYLIB)\b|^VIR(EMENT)?( SEPA)?( INST)?( RECU| EMIS)? (VERS|DE) (MR|MME|M) /;
+
 export function merchantKey(rawDescription: string): string {
   let s = foldText(rawDescription);
+  const person = PERSON_TRANSFER.test(s);
   // Prefixes can stack ("CB CARTE X1234 ..."), so apply until stable.
   for (let i = 0; i < 3; i++) {
     const before = s;
     for (const p of PREFIXES) s = s.replace(p, "");
     if (s === before) break;
   }
-  // Keep the brand of store-numbered names ("MONOP4801" -> "MONOP") before codes are stripped.
-  s = s.replace(/\b([A-Z]{3,})\d{2,}\b/g, "$1");
+  const afterPrefixes = s;
+  // Per-ride descriptors ("LIME*2 COURSES 4LAF", "LIME*TRAJET") all mean the same merchant.
+  s = s.replace(/^LIME\s*\*.*$/, "LIME");
+  // Keep the brand of store-numbered names ("MONOP4801" -> "MONOP") before codes are stripped,
+  // but not month stamps ("JAN2026"), which would split a monthly direct debit into twelve merchants.
+  s = s.replace(/\b([A-Z]{3,})\d{2,}\b/g, (_, letters: string) => (MONTHS.has(letters) ? " " : letters));
   for (const n of NOISE) s = s.replace(n, " ");
   s = s
     .replace(/[-./\\]+/g, " ")
@@ -72,16 +115,21 @@ export function merchantKey(rawDescription: string): string {
   // Spaced-out names ("P H I S E R") become one word; lone letters ("L ARMANDIE") are dropped.
   s = s.replace(/\b[A-Z](?: [A-Z]\b){2,}/g, (m) => m.replace(/ /g, ""));
   // Pure numbers are amounts, times or references, never part of a stable merchant identity.
-  const tokens = s.split(" ").filter((t) => t.length > 1 && !/^\d+$/.test(t));
+  let tokens = s.split(" ").filter((t) => (t.length > 1 || (person && /^[A-Z]$/.test(t))) && !/^\d+$/.test(t));
+  // Short codes mixing letters and digits ("4LAF") only identify the merchant when nothing else does ("G20").
+  const words = tokens.filter((t) => !(/\d/.test(t) && /[A-Z]/.test(t)));
+  if (words.length) tokens = words;
   // Card descriptors truncate the city ("LA TERRASSE MIRA PAR" = "... PARIS").
   while (tokens.length > 1 && /^(PAR|PARI)$/.test(tokens[tokens.length - 1])) tokens.pop();
   const key = tokens.slice(0, 4).join(" ");
   if (key) return key;
-  // Never return an empty key, and never one containing dates or amounts (it must be stable across months).
-  const words = foldText(rawDescription)
-    .split(" ")
-    .filter((t) => t.length > 1 && !/\d/.test(t));
-  return words.slice(0, 4).join(" ") || "UNKNOWN";
+  // Everything was a code ("G20 PARIS 12/04"): keep the codes, but never dates, times or plain numbers,
+  // so the key stays stable from one month to the next.
+  const fallback = afterPrefixes
+    .replace(/\b\d{2}\/\d{2}(\/\d{2,4})?\b|\b\d{1,2}H\d{2}\b/g, " ")
+    .split(/[\s*]+/)
+    .filter((t) => t.length > 1 && !/^[\d.,]+$/.test(t) && !/^X\d{4}$/.test(t));
+  return fallback.slice(0, 4).join(" ") || "UNKNOWN";
 }
 
 /**

@@ -23,6 +23,7 @@ export function CategoriesView({ categories, aiEnabled, reviewCount }: { categor
   const toast = useToast();
   const [editing, setEditing] = React.useState<CategoryWithStats | null>(null);
   const [editorOpen, setEditorOpen] = React.useState(false);
+  const [newKind, setNewKind] = React.useState<CategoryWithStats["kind"]>("EXPENSE");
   const [aiOpen, setAiOpen] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
   const visible = categories.filter((c) => !c.archived);
@@ -61,7 +62,14 @@ export function CategoriesView({ categories, aiEnabled, reviewCount }: { categor
                 <Sparkles className="text-accent" /> Re-categorize with AI
               </Button>
             )}
-            <Button size="sm" variant="primary" onClick={() => open(null)}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                setNewKind("EXPENSE");
+                open(null);
+              }}
+            >
               <Plus /> New category
             </Button>
           </>
@@ -95,8 +103,8 @@ export function CategoriesView({ categories, aiEnabled, reviewCount }: { categor
                   <li className="border-b border-line md:odd:border-r">
                     <button
                       onClick={() => {
-                        setEditing(null);
-                        setEditorOpen(true);
+                        setNewKind(s.kind);
+                        open(null);
                       }}
                       className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-[14px] font-medium text-accent transition-colors hover:bg-fill"
                     >
@@ -146,7 +154,14 @@ export function CategoriesView({ categories, aiEnabled, reviewCount }: { categor
         )}
       </div>
 
-      <CategoryEditor open={editorOpen} onOpenChange={setEditorOpen} category={editing} categories={categories} onSaved={() => router.refresh()} />
+      <CategoryEditor
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        category={editing}
+        categories={categories}
+        defaultKind={newKind}
+        onSaved={() => router.refresh()}
+      />
 
       <Sheet open={aiOpen} onOpenChange={setAiOpen} title="Re-categorize with AI" description="Your manual choices and your own rules are never changed.">
         <div className="space-y-3 px-6 pb-6">

@@ -14,7 +14,7 @@ export interface DefaultCategory {
  * page load (services/user.ts): missing categories are added, the built-in lexicon is re-synced,
  * and rules are re-applied to non-manual history.
  */
-export const DEFAULTS_VERSION = 2;
+export const DEFAULTS_VERSION = 3;
 
 /** systemKeys referenced by code. These categories can be renamed but never deleted. */
 export const FALLBACK_EXPENSE = "Miscellaneous";
@@ -125,8 +125,14 @@ export interface SystemRule {
 const contains = (category: string, direction: SystemRule["direction"], patterns: string[]): SystemRule[] =>
   patterns.map((pattern) => ({ pattern, category, direction }));
 
-/** Card-payment prefixes on French statements; used to keep some brands to direct debits only. */
-const NOT_A_CARD_PAYMENT = String.raw`^(?!(CARTE|CB|PAIEMENT PAR CARTE|PAIEMENT CB|ACHAT CB)\b)`;
+/** Direct-debit prefixes on French statements; insurer brands only count as insurance behind one of these. */
+const DIRECT_DEBIT = String.raw`^(PRLV|PRELEVEMENT|PRELEVMNT|ECHEANCE)\b`;
+const word = (category: string, direction: SystemRule["direction"], words: string[]): SystemRule => ({
+  pattern: String.raw`\b(${words.join("|")})\b`,
+  category,
+  direction,
+  matchType: "REGEX",
+});
 
 /**
  * Built-in keyword lexicon (lowest priority). Patterns are matched against the normalized
@@ -134,7 +140,7 @@ const NOT_A_CARD_PAYMENT = String.raw`^(?!(CARTE|CB|PAIEMENT PAR CARTE|PAIEMENT 
  * with their own or learned rules.
  */
 export const SYSTEM_RULES: SystemRule[] = [
-  ...contains("Groceries", undefined, [
+  ...contains("Groceries", "DEBIT", [
     "CARREFOUR",
     "LECLERC",
     "AUCHAN",
@@ -177,14 +183,12 @@ export const SYSTEM_RULES: SystemRule[] = [
     "TACOS",
     "O TACOS",
     "BURGER",
-    "KITCHEN",
     "FIVE GUYS",
     "DOMINOS",
     "PRET A MANGER",
     "BISTRO",
     "TRAITEUR",
     "CREPERIE",
-    "POKE",
     "BAGEL",
     "FRICHTI",
   ]),
@@ -203,8 +207,6 @@ export const SYSTEM_RULES: SystemRule[] = [
     "IVS FRANCE",
     "NYX",
     "LAVAZZA",
-    "CAFE",
-    "CAFETERIA",
     "KB COFFEE",
     "COUTUME",
     "BOULANGERIE",
@@ -213,8 +215,10 @@ export const SYSTEM_RULES: SystemRule[] = [
     "MARIE BLACHERE",
     "LA MIE CALINE",
   ]),
+  // Whole words only: "POKE" must not catch "Pokemon", nor "KITCHEN" "KitchenAid".
+  word("Dining Out", "DEBIT", ["KITCHEN", "POKE", "POKE BOWL"]),
+  word("Canteen", "DEBIT", ["CROUS", "CAFETERIA", "CAFET"]),
   ...contains("Canteen", "DEBIT", [
-    "CROUS",
     "IZLY",
     "SODEXO",
     "ELIOR",
@@ -383,19 +387,21 @@ export const SYSTEM_RULES: SystemRule[] = [
     "NOCIBE",
     "MARIONNAUD",
   ]),
-  // Generic insurance words anywhere; insurer brands only when it isn't a card payment, so a card
-  // payment at an employer that happens to be an insurer (e.g. its canteen) isn't filed as insurance.
+  // Generic insurance words anywhere; insurer brands only on direct debits, so a card payment at an
+  // employer that happens to be an insurer (e.g. its canteen), or a transfer to a person, isn't filed as insurance.
   ...contains("Insurance", "DEBIT", ["ASSURANCE", "MUTUELLE"]),
   {
-    pattern: `${NOT_A_CARD_PAYMENT}.*\\b(AXA|MAIF|MACIF|MAAF|MATMUT|ALLIANZ|GROUPAMA|PACIFICA|GMF|LUKO|ALAN|GENERALI|SWISSLIFE|HISCOX|LEOCARE|HEYME|LMDE)\\b`,
+    pattern: String.raw`${DIRECT_DEBIT}.*\b(AXA|MAIF|MACIF|MAAF|MATMUT|ALLIANZ|GROUPAMA|PACIFICA|GMF|LUKO|GENERALI|SWISSLIFE|HISCOX|LEOCARE|HEYME|LMDE)\b`,
     category: "Insurance",
     direction: "DEBIT",
     matchType: "REGEX",
   },
   ...contains("Taxes", "DEBIT", ["DGFIP", "IMPOT", "TRESOR PUBLIC", "FINANCES PUBLIQUES", "URSSAF", "ANTS"]),
   ...contains("Fees & Charges", "DEBIT", ["COTIS", "FRAIS", "COMMISSION", "AGIOS", "OFFRE GLOBULE", "OFFRE ESSENTIEL", "FEE", "INTERETS DEBITEURS"]),
-  ...contains("Cash", "DEBIT", ["RETRAIT DAB", "RETRAIT GAB", "RETRAIT", "CASH WITHDRAWAL", "CASH AT", "ATM"]),
-  ...contains("Housing", "DEBIT", ["LOYER", "FONCIA", "NEXITY", "ORPI", "SYNDIC", "CITYA", "ECHEANCE PRET", "PRET IMMO"]),
+  ...contains("Cash", "DEBIT", ["RETRAIT DAB", "RETRAIT GAB", "CASH WITHDRAWAL", "CASH AT", "ATM"]),
+  word("Cash", "DEBIT", ["RETRAIT"]), // not "RETRAITE" (pension)
+  ...contains("Housing", "DEBIT", ["LOYER", "FONCIA", "NEXITY", "ORPI", "CITYA", "ECHEANCE PRET", "PRET IMMO"]),
+  word("Housing", "DEBIT", ["SYNDIC"]), // not "COTISATION SYNDICALE"
   ...contains("Pets", "DEBIT", ["VETERINAIRE", "VETO", "MAXI ZOO", "ANIMALIS", "TRUFFAUT"]),
   ...contains("Gifts & Donations", "DEBIT", ["UNICEF", "CROIX ROUGE", "MSF", "RESTOS DU COEUR", "LEETCHI", "LYDIA CAGNOTTE"]),
   ...contains("Salary", "CREDIT", ["SALAIRE", "PAYROLL", "SALARY", "REMUNERATION"]),

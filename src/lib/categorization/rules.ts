@@ -26,7 +26,8 @@ export interface MatchableTransaction {
 }
 
 export interface CompiledRule extends RuleLike {
-  test: (value: string) => boolean;
+  /** Receives the star-normalized text and the plain folded text (regexes may rely on literal "*"). */
+  test: (value: string, raw: string) => boolean;
 }
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -45,12 +46,13 @@ export function normalizeForMatch(input: string): string {
  * while "PHARMA" still matches "PHARMACIE".
  */
 export function compileRule(rule: RuleLike): CompiledRule | null {
-  let test: (value: string) => boolean;
+  let test: CompiledRule["test"];
   if (rule.matchType === "REGEX") {
     if (rule.pattern.length > 300) return null;
     try {
       const re = new RegExp(rule.pattern, "i");
-      test = (v) => re.test(v);
+      // User regexes written against the bank text ("UBR\\*") keep working next to the "*"-free form.
+      test = (v, raw) => re.test(v) || re.test(raw);
     } catch {
       return null; // invalid user regex never breaks ingestion
     }
@@ -69,25 +71,49 @@ export function compileRule(rule: RuleLike): CompiledRule | null {
 
 const SOURCE_RANK: Record<RuleSourceId, number> = { LEARNED: 4, USER: 3, AI: 2, SYSTEM: 1 };
 
-/** A regex's length says nothing about how specific it is; rank it like a short keyword. */
-const specificity = (r: RuleLike) => (r.matchType === "REGEX" ? 8 : r.pattern.length);
+/**
+ * A regex's length says nothing about how specific it is. Rank it below any real keyword, so
+ * "SUSHI" beats a broad bar regex on "Sushi Bar".
+ */
+const specificity = (r: RuleLike) => (r.matchType === "REGEX" ? 3 : r.pattern.length);
 
-/** Sort: priority desc, then the more specific (longer) pattern, then source rank. Deterministic. */
+/** Sort: priority desc, then the more specific (longer) pattern, then source rank, then pattern. Deterministic. */
 export function compileRules(rules: RuleLike[]): CompiledRule[] {
   return rules
     .map(compileRule)
     .filter((r): r is CompiledRule => r !== null)
-    .sort((a, b) => b.priority - a.priority || specificity(b) - specificity(a) || SOURCE_RANK[b.source] - SOURCE_RANK[a.source] || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        b.priority - a.priority ||
+        specificity(b) - specificity(a) ||
+        SOURCE_RANK[b.source] - SOURCE_RANK[a.source] ||
+        a.pattern.localeCompare(b.pattern) ||
+        a.id.localeCompare(b.id),
+    );
 }
 
-export function matchRule(rules: CompiledRule[], tx: MatchableTransaction): CompiledRule | null {
+/**
+ * First rule (in priority order) that matches the transaction and that `accept` allows.
+ * Callers pass a kind check so a rule whose category can't hold this money direction
+ * (e.g. an expense category on a salary credit) is skipped and the next rule gets its chance.
+ */
+export function matchRule(rules: CompiledRule[], tx: MatchableTransaction, accept?: (rule: CompiledRule) => boolean): CompiledRule | null {
   const description = normalizeForMatch(tx.rawDescription);
+  const rawDescription = foldText(tx.rawDescription);
   const merchant = normalizeForMatch(tx.merchantKey);
   for (const rule of rules) {
     if (rule.direction === "DEBIT" && tx.amountCents >= 0) continue;
     if (rule.direction === "CREDIT" && tx.amountCents <= 0) continue;
     if (rule.accountId && tx.accountId && rule.accountId !== tx.accountId) continue;
-    if (rule.test(rule.field === "MERCHANT" ? merchant : description)) return rule;
+    const hit = rule.field === "MERCHANT" ? rule.test(merchant, foldText(tx.merchantKey)) : rule.test(description, rawDescription);
+    if (hit && (!accept || accept(rule))) return rule;
   }
   return null;
+}
+
+/** Can a category of this kind hold a transaction with this sign? Transfers go both ways. */
+export function kindFits(kind: "EXPENSE" | "INCOME" | "TRANSFER" | undefined, amountCents: number): boolean {
+  if (!kind) return false;
+  if (kind === "TRANSFER") return true;
+  return amountCents < 0 ? kind === "EXPENSE" : kind === "INCOME";
 }

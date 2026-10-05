@@ -58,8 +58,12 @@ export interface CategoryInput {
 }
 
 async function assertNameFree(userId: string, name: string, exceptId?: string) {
-  const clash = await prisma.category.findFirst({ where: { userId, name, ...(exceptId ? { id: { not: exceptId } } : {}) } });
-  if (clash) throw new CategoryError(clash.archived ? `"${name}" is a hidden category. Restore it instead.` : `A category named "${name}" already exists.`);
+  // Case-insensitive, like the category picker: "groceries" next to "Groceries" would be confusing.
+  const clash = await prisma.category.findFirst({
+    where: { userId, name: { equals: name, mode: "insensitive" }, ...(exceptId ? { id: { not: exceptId } } : {}) },
+  });
+  if (clash)
+    throw new CategoryError(clash.archived ? `"${clash.name}" is a hidden category. Restore it instead.` : `A category named "${clash.name}" already exists.`);
 }
 
 export async function createCategory(userId: string, input: CategoryInput) {
@@ -129,8 +133,11 @@ export async function restoreCategory(userId: string, id: string) {
 /**
  * Ask the AI again.
  * - "flagged": transactions waiting for review.
- * - "all": every non-manual transaction the rules don't cover. Previous AI decisions are forgotten first,
- *   so new or edited categories (e.g. "Bars & Nightlife") get a chance. Your corrections and rules are kept.
+ * - "all": every non-manual transaction the rules don't cover. Previous AI decisions don't answer for
+ *   the AI, so new or edited categories (e.g. "Bars & Nightlife") get a chance. Your corrections and
+ *   rules (including AI rules you edited, which became yours) are kept.
+ * Only merchants the AI actually answers for change: their old AI rule is replaced and everything
+ * following it moves along. Merchants it leaves unanswered keep their category.
  */
 export async function recategorizeWithAi(userId: string, scope: "flagged" | "all") {
   if (!aiConfigured()) throw new CategoryError("AI isn't configured. Add GEMINI_API_KEY in your hosting settings, then redeploy.");
@@ -145,13 +152,13 @@ export async function recategorizeWithAi(userId: string, scope: "flagged" | "all
           }),
     },
     include: { account: { select: { institution: true } } },
-    take: 5000,
   });
   if (!txs.length) return { updated: 0, byAi: 0, stillFlagged: 0, warnings: [] as string[] };
 
   const ctx = await loadPipelineContext(userId);
-  // "all" re-decides past AI choices, so they must not answer for the AI.
-  if (scope === "all") ctx.rules = ctx.rules.filter((r) => r.source !== "AI");
+  // Past AI answers are what we re-ask about, so they must not answer in the AI's place.
+  // Rules you edited are yours (USER) and still apply.
+  ctx.rules = ctx.rules.filter((r) => r.source !== "AI");
   const result = await runPipeline(
     txs.map((t) => ({
       rawDescription: t.rawDescription,
@@ -164,26 +171,63 @@ export async function recategorizeWithAi(userId: string, scope: "flagged" | "all
   );
   // If the AI failed (quota, network…), change nothing rather than downgrade AI choices to "Miscellaneous".
   if (result.warnings.length) throw new CategoryError(result.warnings[0]);
-  if (scope === "all") await prisma.categorizationRule.deleteMany({ where: { userId, source: "AI" } });
-  await persistAiRules(userId, result.aiRules);
-  const groups = new Map<string, { data: (typeof result.decisions)[number]; ids: string[] }>();
+
+  // Merchants the AI answered for this time; anything it left unanswered keeps its current category and rule.
+  const slotOf = (t: { merchantKey: string; amountCents: number }) => `${t.amountCents < 0 ? "DEBIT" : "CREDIT"}|${t.merchantKey}`;
+  const answers = new Map<string, (typeof result.decisions)[number]>();
   result.decisions.forEach((d, i) => {
-    const key = `${d.categoryId}|${d.source}|${d.ruleId}|${d.confidence}|${d.needsReview}`;
-    const g = groups.get(key) ?? { data: d, ids: [] };
-    g.ids.push(txs[i].id);
-    groups.set(key, g);
+    if (d.source === "AI" && !answers.has(slotOf(txs[i]))) answers.set(slotOf(txs[i]), d);
   });
-  for (const g of groups.values()) {
-    await prisma.transaction.updateMany({
-      where: { userId, id: { in: g.ids }, categorySource: { not: "MANUAL" } },
-      data: {
-        categoryId: g.data.categoryId,
-        categorySource: g.data.source,
-        ruleId: g.data.ruleId,
-        confidence: g.data.confidence,
-        needsReview: g.data.needsReview,
-      },
-    });
-  }
-  return { updated: txs.length, byAi: result.stats.byAi, stillFlagged: result.stats.needsReview, warnings: result.warnings };
+  const selected = new Set(txs.map((t) => t.id));
+
+  return prisma.$transaction(
+    async (db) => {
+      const oldAiRules = (await db.categorizationRule.findMany({ where: { userId, source: "AI", field: "MERCHANT", matchType: "EXACT" } })).filter((r) =>
+        answers.has(`${r.direction}|${r.pattern}`),
+      );
+      // Transactions outside this run that still follow an AI rule being replaced get the new answer too.
+      const followers = oldAiRules.length
+        ? await db.transaction.findMany({
+            where: { userId, ruleId: { in: oldAiRules.map((r) => r.id) }, categorySource: { not: "MANUAL" } },
+            select: { id: true, merchantKey: true, amountCents: true },
+          })
+        : [];
+      if (oldAiRules.length) await db.categorizationRule.deleteMany({ where: { id: { in: oldAiRules.map((r) => r.id) } } });
+      await persistAiRules(userId, result.aiRules, db);
+
+      const groups = new Map<string, { data: (typeof result.decisions)[number]; ids: string[] }>();
+      const assign = (id: string, d: (typeof result.decisions)[number]) => {
+        const key = `${d.categoryId}|${d.source}|${d.ruleId}|${d.confidence}|${d.needsReview}`;
+        const g = groups.get(key) ?? { data: d, ids: [] };
+        g.ids.push(id);
+        groups.set(key, g);
+      };
+      result.decisions.forEach((d, i) => {
+        if (d.source !== "FALLBACK") assign(txs[i].id, d);
+      });
+      for (const f of followers) {
+        const d = answers.get(slotOf(f));
+        if (d && !selected.has(f.id)) assign(f.id, d);
+      }
+      let updated = 0;
+      for (const g of groups.values()) {
+        for (let i = 0; i < g.ids.length; i += 5000) {
+          const res = await db.transaction.updateMany({
+            where: { userId, id: { in: g.ids.slice(i, i + 5000) }, categorySource: { not: "MANUAL" } },
+            data: {
+              categoryId: g.data.categoryId,
+              categorySource: g.data.source,
+              ruleId: g.data.ruleId,
+              confidence: g.data.confidence,
+              needsReview: g.data.needsReview,
+            },
+          });
+          updated += res.count;
+        }
+      }
+      const stillFlagged = result.decisions.filter((d, i) => (d.source === "FALLBACK" ? txs[i].needsReview : d.needsReview)).length;
+      return { updated, byAi: result.stats.byAi, stillFlagged, warnings: result.warnings };
+    },
+    { timeout: 120_000, maxWait: 30_000 },
+  );
 }

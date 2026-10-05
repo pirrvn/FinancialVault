@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "../db";
 import { PRIORITY } from "../categorization/defaults";
-import { compileRules, matchRule, type RuleLike } from "../categorization/rules";
+import { compileRules, kindFits, matchRule, type RuleLike } from "../categorization/rules";
 import { fallbackCategory } from "../categorization/pipeline";
 import type { CategorySource } from "@/generated/prisma/client";
 
@@ -19,10 +19,10 @@ export async function overrideCategory(
   const { applyToSimilar = true, learn = true } = opts;
   const [tx, category] = await Promise.all([
     prisma.transaction.findFirst({ where: { id: transactionId, userId } }),
-    prisma.category.findFirst({ where: { id: categoryId, userId } }),
+    prisma.category.findFirst({ where: { id: categoryId, userId, archived: false } }),
   ]);
   if (!tx) throw new NotFoundError("Transaction not found");
-  if (!category) throw new NotFoundError("Category not found");
+  if (!category) throw new NotFoundError("Category not found (it may be hidden)");
 
   const direction = tx.amountCents < 0 ? "DEBIT" : "CREDIT";
   return prisma.$transaction(async (db) => {
@@ -102,10 +102,9 @@ export async function reapplyRules(userId: string): Promise<number> {
     updates.set(key, entry);
   };
   for (const tx of txs) {
-    const rule = matchRule(compiled, tx);
-    const kind = rule ? kindById.get(rule.categoryId) : undefined;
-    const usable = rule && kind && (kind === "TRANSFER" || tx.amountCents < 0 === (kind === "EXPENSE"));
-    if (usable) {
+    // Skip rules whose category can't hold this direction, so the next matching rule decides.
+    const rule = matchRule(compiled, tx, (r) => kindFits(kindById.get(r.categoryId), tx.amountCents));
+    if (rule) {
       if (rule.categoryId === tx.categoryId && rule.id === tx.ruleId) continue;
       const confidence = rule.source === "AI" ? (rule.confidence ?? 0.8) : 1;
       queue(`rule:${rule.id}`, { categoryId: rule.categoryId, ruleId: rule.id, source: "RULE", confidence, needsReview: confidence < 0.85 }, tx.id);
@@ -118,7 +117,8 @@ export async function reapplyRules(userId: string): Promise<number> {
   let changed = 0;
   for (const u of updates.values()) {
     const res = await prisma.transaction.updateMany({
-      where: { id: { in: u.ids }, userId },
+      // Re-check MANUAL at write time: the user may have re-filed one while this ran.
+      where: { id: { in: u.ids }, userId, categorySource: { not: "MANUAL" } },
       data: { categoryId: u.categoryId, ruleId: u.ruleId, categorySource: u.source, confidence: u.confidence, needsReview: u.needsReview },
     });
     changed += res.count;

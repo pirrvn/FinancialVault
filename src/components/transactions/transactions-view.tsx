@@ -127,13 +127,14 @@ export function TransactionsView({
   );
 
   const createAndAssign = React.useCallback(
-    async (t: TransactionDTO, name: string, applyToSimilar: boolean) => {
-      setPickerFor(null);
-      const res = await quickCreateCategoryAction(name, t.amountCents < 0 ? "EXPENSE" : "INCOME");
+    async (t: TransactionDTO, name: string, kind: CategoryDTO["kind"], applyToSimilar: boolean) => {
+      const res = await quickCreateCategoryAction(name, kind);
       if (!res.ok) {
+        // The picker stays open with the typed name, so it can be fixed.
         toast({ tone: "error", title: "Couldn't create category", description: res.error });
         return;
       }
+      setPickerFor(null);
       const created: CategoryDTO = {
         ...res.data,
         kind: res.data.kind as CategoryDTO["kind"],
@@ -356,7 +357,7 @@ export function TransactionsView({
                       open={pickerFor === t.id}
                       onOpenChange={(o) => setPickerFor(o ? t.id : null)}
                       onSelect={(id, opts) => recategorize(t, id, opts.applyToSimilar)}
-                      onCreate={(name, opts) => createAndAssign(t, name, opts.applyToSimilar)}
+                      onCreate={(name, opts) => createAndAssign(t, name, opts.kind, opts.applyToSimilar)}
                     >
                       <CategoryChip category={c} source={t.categorySource} needsReview={t.needsReview} aria-label={`Category: ${c?.name}. Change`} />
                     </CategoryPicker>
