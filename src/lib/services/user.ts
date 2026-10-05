@@ -3,6 +3,7 @@ import { cache } from "react";
 import { prisma } from "../db";
 import { DEFAULT_CATEGORIES, PRIORITY, SYSTEM_RULES } from "../categorization/defaults";
 import { foldText } from "../text";
+import { requireSession } from "../auth";
 
 /**
  * FinanceVault runs single-tenant by default: one owner identified by FINANCEVAULT_USER_EMAIL.
@@ -10,6 +11,8 @@ import { foldText } from "../text";
  * requires replacing this function with a session lookup.
  */
 export const getCurrentUser = cache(async () => {
+  // Every page, API route and server action resolves the user here, so this is the auth gate.
+  await requireSession();
   const email = process.env.FINANCEVAULT_USER_EMAIL || "owner@financevault.local";
   const user = await prisma.user.upsert({ where: { email }, update: {}, create: { email, name: "Owner" } });
   await ensureUserSetup(user.id);

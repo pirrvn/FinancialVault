@@ -5,6 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "FinanceVault", template: "%s · FinanceVault" },
   description: "Personal finance and wealth dashboard for Revolut and Crédit Agricole, with AI categorization and a financial copilot.",
+  appleWebApp: { capable: true, title: "FinanceVault", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

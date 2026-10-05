@@ -6,8 +6,24 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Command } from "cmdk";
 import { Dialog } from "radix-ui";
-import { LayoutGrid, ListOrdered, UploadCloud, Lightbulb, LineChart, Wand2, Sparkles, Search, Moon, Sun, Monitor, Vault, CircleAlert } from "lucide-react";
+import {
+  LayoutGrid,
+  ListOrdered,
+  UploadCloud,
+  Lightbulb,
+  LineChart,
+  Wand2,
+  Sparkles,
+  Search,
+  Moon,
+  Sun,
+  Monitor,
+  Vault,
+  CircleAlert,
+  LogOut,
+} from "lucide-react";
 import { CopilotProvider, useCopilot } from "./copilot/copilot-provider";
+import { logoutAction } from "@/lib/auth-actions";
 import { CopilotDrawer } from "./copilot/copilot-drawer";
 import { Kbd } from "./ui/input";
 import { cn } from "@/lib/utils";
@@ -26,7 +42,7 @@ function isTyping(e: KeyboardEvent) {
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
 }
 
-function Shell({ children, reviewCount }: { children: React.ReactNode; reviewCount: number }) {
+function Shell({ children, reviewCount, canSignOut }: { children: React.ReactNode; reviewCount: number; canSignOut: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const copilot = useCopilot();
@@ -120,7 +136,23 @@ function Shell({ children, reviewCount }: { children: React.ReactNode; reviewCou
             </span>
             <Kbd>⌘J</Kbd>
           </button>
-          <ThemeSwitch />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <ThemeSwitch />
+            </div>
+            {canSignOut && (
+              <form action={logoutAction}>
+                <button
+                  type="submit"
+                  aria-label="Sign out"
+                  title="Sign out"
+                  className="flex size-8 items-center justify-center rounded-xl text-subtle transition-colors hover:bg-fill hover:text-fg"
+                >
+                  <LogOut className="size-3.5" />
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -274,10 +306,12 @@ function CommandPalette({ open, onOpenChange, reviewCount }: { open: boolean; on
   );
 }
 
-export function AppShell({ children, reviewCount }: { children: React.ReactNode; reviewCount: number }) {
+export function AppShell({ children, reviewCount, canSignOut }: { children: React.ReactNode; reviewCount: number; canSignOut: boolean }) {
   return (
     <CopilotProvider>
-      <Shell reviewCount={reviewCount}>{children}</Shell>
+      <Shell reviewCount={reviewCount} canSignOut={canSignOut}>
+        {children}
+      </Shell>
     </CopilotProvider>
   );
 }

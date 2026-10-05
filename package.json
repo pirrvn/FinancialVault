@@ -14,7 +14,8 @@
     "db:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate",
     "samples": "tsx scripts/generate-samples.ts",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "vercel-build": "node scripts/vercel-build.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

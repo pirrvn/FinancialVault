@@ -7,7 +7,8 @@ import { StatementParseError, type InstitutionId } from "@/lib/parsers";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+/** Vercel caps request bodies at 4.5 MB; the client sends one file per request. */
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 /** Multipart upload of one or more statements. Field "files" (repeatable), optional "institution". */
 export async function POST(req: Request) {
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   const results: ({ ok: true; summary: ImportSummary } | { ok: false; fileName: string; error: string })[] = [];
   for (const file of files) {
     if (file.size > MAX_FILE_BYTES) {
-      results.push({ ok: false, fileName: file.name, error: "File is larger than 10 MB" });
+      results.push({ ok: false, fileName: file.name, error: "File is larger than 4 MB. Export a shorter period." });
       continue;
     }
     try {
