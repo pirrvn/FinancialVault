@@ -48,6 +48,7 @@ src/
       transactions/          Ledger with inline categorization
       insights/              Subscriptions, concentration, savings opportunities
       forecast/              3/6/12-month projection + what-if simulator
+      categories/            Category management (custom categories, descriptions for the AI, hide/restore)
       rules/                 Rule management
       import/                Drag-and-drop ingestion + history
     api/
@@ -96,7 +97,21 @@ scripts/generate-samples.ts  Demo statement generator
 2. **AI.** Transactions that are still unmatched are grouped by *merchant and direction* and sent to Gemini in batches, using structured outputs with the category list as an enum. That's one decision per merchant, not per row. The model's category must agree with the money direction, so an expense can't land in Salary. Answers with ≥ 0.7 confidence are **saved as AI rules**, so the same merchant is never sent twice. Answers below 0.85 are flagged for review.
 3. **Fallback + you.** Anything still unresolved, including when there's no API key or the API is down, is assigned *Miscellaneous* or *Other income* and flagged. Fixing it in the table takes one click (or the keyboard: `C`). That **creates a learned merchant rule** and, by default, re-categorizes every similar transaction that you haven't already set manually.
 
-Merchant keys come from `merchant.ts`, which strips the noise French banks wrap around merchant names (`PAIEMENT PAR CARTE X1234 … 04/02`, `PRLV SEPA … MDT/…`, `VIR SEPA RECU /DE … /MOTIF …`, card masks, dates, references). That way `CB CARREFOUR CITY 12/03` and `PAIEMENT PAR CARTE X4821 CARREFOUR CITY 04/02` both become `CARREFOUR CITY`.
+Merchant keys come from `merchant.ts`, which strips the noise French banks wrap around merchant names (`PAIEMENT PAR CARTE X1234 … 04/02`, `Carte X2416 … Paris 12/04`, `PRLV SEPA … MDT/…`, `Virement Vir Inst Wero de …`, card-processor prefixes such as `SQ *` or `UBR*`, store numbers like `MONOP4801`, card masks, dates, references). That way `CB CARREFOUR CITY 12/03` and `PAIEMENT PAR CARTE X4821 CARREFOUR CITY 04/02` both become `CARREFOUR CITY`.
+
+The built-in lexicon is deliberately cautious. For example, insurer brands only match when the payment isn't a card payment, so a card top-up at a company canteen run by an insurer (an apprentice at Allianz, say) is never filed as insurance.
+
+### Your categories
+
+The **Categories** screen (sidebar, or **Categories** on the Transactions page) lets you add, rename, recolor and re-icon categories, and give each a **description**. Gemini reads the descriptions when it files new merchants, so "card top-ups for the Allianz canteen" or "bars and terraces with friends" really steer it. You can also type a new name straight into the category picker on a transaction and press Enter: the category is created and applied in one go.
+
+Deleting a category moves its transactions and rules to another category of the same type. Built-in categories are *hidden* instead of deleted, so an upgrade never brings them back, and they can be restored. *Miscellaneous*, *Other Income* and *Transfers* catch everything else, so they can be renamed but never removed. Built-ins are tracked by a stable `systemKey`, so renaming one is always safe.
+
+**Re-categorize with AI** asks Gemini again, either about the transactions flagged for review, or about everything the AI decided, using your current categories and descriptions. Your manual choices and your own rules are never changed. If the AI call fails (quota, network), nothing is modified.
+
+### Upgrades
+
+When a new version ships new built-in categories or lexicon entries (`DEFAULTS_VERSION` in `defaults.ts`), the first page load after deploying upgrades your data automatically: missing categories are added, the built-in rules are re-synced, and the rules are re-applied to non-manual history. A transaction whose built-in rule no longer exists goes back to *Miscellaneous* and is flagged, rather than silently keeping a stale category.
 
 ### Analytics
 
